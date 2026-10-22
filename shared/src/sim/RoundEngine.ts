@@ -40,6 +40,8 @@ import type { FighterState, InputState, Obstacle } from '../types';
 import type { MatchEvent } from '../net/protocol';
 
 export interface RosterEntry {
+  /** Stable net identity. When omitted, defaults to 1-based roster index. */
+  id?: number;
   name: string;
   css: string;
   radius: number;
@@ -93,16 +95,25 @@ export class RoundEngine {
 
     // Generalized spawn ring: n evenly spaced angles starting at 135 deg.
     // For n = 4 this reproduces the solo game's SPAWN_ANGLES_DEG exactly.
+    // Fighter ids prefer an explicit RosterEntry.id (the server's stable pid)
+    // so lobby leave/rejoin gaps never desync inputs, schema writes, or
+    // forceOut. When omitted (unit tests), fall back to 1-based index.
     const n = roster.length;
     const spawnR = ARENA_RADIUS * 0.55;
+    const usedIds = new Set<number>();
     roster.forEach((entry, i) => {
+      const id = entry.id ?? i + 1;
+      if (usedIds.has(id)) {
+        throw new Error(`RoundEngine: duplicate fighter id ${id}`);
+      }
+      usedIds.add(id);
       const a = ((135 + (360 / n) * i) * Math.PI) / 180;
       const x = ARENA_CENTER.x + Math.cos(a) * spawnR;
       const y = ARENA_CENTER.y + Math.sin(a) * spawnR;
       const mass = (entry.radius * entry.radius) / 1600;
       const fl = Math.hypot(ARENA_CENTER.x - x, ARENA_CENTER.y - y) || 1;
       this.fighters.push({
-        id: i + 1,
+        id,
         name: entry.name,
         css: entry.css,
         pos: { x, y },
