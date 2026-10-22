@@ -50,6 +50,7 @@ export class UIManager {
   private resultSub = el('result-sub');
   private resultStats = el('result-stats');
   private dashBtn = el('dash-button');
+  private outCard = el('out-card');
 
   constructor() {
     el('btn-play').addEventListener('click', () => this.command('start'));
@@ -59,9 +60,33 @@ export class UIManager {
     el('btn-menu').addEventListener('click', () => this.command('menu'));
     el('btn-menu-2').addEventListener('click', () => this.command('menu'));
     el('pause-button').addEventListener('click', () => this.pause());
+    // Out-card: spectate the finale, or bail straight back to the menu.
+    el('btn-watch').addEventListener('click', () => {
+      this.outCard.classList.add('hidden');
+      sfx.ui();
+    });
+    el('btn-leave').addEventListener('click', () => {
+      this.outCard.classList.add('hidden');
+      this.command('menu');
+    });
+
+    // Tiny click feedback on every menu button (gameplay buttons have their
+    // own sounds).
+    for (const id of ['btn-play', 'btn-restart', 'btn-restart-2', 'btn-resume', 'btn-menu', 'btn-menu-2']) {
+      el(id).addEventListener('pointerdown', () => sfx.ui());
+    }
 
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyP' || e.code === 'Escape') this.togglePause();
+      // Enter / Space on the result screen = play again (desktop comfort;
+      // the queued dash is discarded by startRound, so no auto-dash at GO).
+      if (
+        (e.code === 'Enter' || e.code === 'Space') &&
+        !this.resultOverlay.classList.contains('hidden')
+      ) {
+        e.preventDefault();
+        this.command('restart');
+      }
     });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.pause();
@@ -71,8 +96,9 @@ export class UIManager {
     gameBus.on('phase', (payload: any) => this.onPhase(payload.phase as Phase));
     gameBus.on('result', (payload: any) => this.onResult(payload as RoundResultMsg));
     gameBus.on('player-out', () => {
-      // Hide the (now useless) dash button while spectating.
+      // Hide the (now useless) dash button and offer the wait/leave choice.
       document.body.dataset.playerOut = '1';
+      if (this.phase === 'playing') this.outCard.classList.remove('hidden');
     });
     gameBus.on('dash-cd', (payload: any) => {
       const frac = Math.max(0, Math.min(1, Number(payload?.frac ?? 0)));
@@ -96,6 +122,7 @@ export class UIManager {
     this.paused = false;
     document.body.dataset.phase = phase;
     delete document.body.dataset.playerOut;
+    this.outCard.classList.add('hidden');
     // Cooldown indicator back to "ready" so a new round never inherits the
     // previous round's leftover cooldown fill.
     this.dashBtn.style.setProperty('--cd', '0');
@@ -157,6 +184,7 @@ export class UIManager {
     );
 
     this.hideAll();
+    this.outCard.classList.add('hidden');
     this.resultOverlay.classList.remove('hidden');
   }
 }

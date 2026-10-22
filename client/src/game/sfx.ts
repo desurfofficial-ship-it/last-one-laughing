@@ -89,6 +89,28 @@ class Sfx {
     this.tone(392, 392, 0.14, 'triangle', 0.16, 0);
     this.tone(311, 262, 0.3, 'triangle', 0.16, 0.15);
   }
+
+  /** Low double-thud warning for incoming bumper balls. */
+  thud(): void {
+    this.tone(190, 130, 0.1, 'square', 0.16);
+    this.tone(190, 130, 0.1, 'square', 0.16, 0.14);
+  }
+
+  /** Descending two-tone warning for the shrinking arena. */
+  shrinkWarn(): void {
+    this.tone(540, 320, 0.16, 'triangle', 0.15);
+    this.tone(540, 320, 0.16, 'triangle', 0.15, 0.19);
+  }
+
+  /** Rubber "boing" when a bumper ball smacks someone. */
+  bump(k: number): void {
+    this.tone(150 + 120 * k, 70, 0.16, 'sine', 0.24 + 0.18 * k);
+  }
+
+  /** Tiny UI click for menu buttons. */
+  ui(): void {
+    this.tone(880, 880, 0.045, 'sine', 0.12);
+  }
 }
 
 export const sfx = new Sfx();

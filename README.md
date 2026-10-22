@@ -50,23 +50,36 @@ Typecheck only: `npm run typecheck`.
 
 | Action | Mobile | Desktop |
 | --- | --- | --- |
-| Move | touch-drag anywhere on the left half (floating joystick) | `WASD` or arrow keys |
+| Move | touch-drag **anywhere on screen** (floating joystick, one-handed friendly) | `WASD` or arrow keys |
 | Dash / slam | big DASH button (bottom right) | `Space` |
 | Pause | pause icon (top right) | `P` or `Esc` |
+| Play again (result screen) | button | `Enter` / `Space` |
 
 No gameplay action requires hovering or a keyboard.
 
 ## How it plays
 
 - 4 circular fighters (you are yellow) on a circular arena with **no walls**.
-- Collisions transfer momentum; dashing into someone multiplies the knockback.
-  Get shoved far enough and your center crosses the rim — you fall and are out.
-- **Arena modifier:** every 10 s the floor warns for 2 s and then turns
-  **slippery for 4 s** (low friction, high drift, easy to slide off).
-- After 75 s the arena slowly shrinks so every round is guaranteed to end.
-- Rounds open with a 3-2-1 countdown and show a visible round timer; the
-  result screen reports the winner, round time, your knockouts and your
-  fastest win (stored in `localStorage`).
+- Collisions transfer momentum; dashing into someone multiplies the knockback
+  (confirmed slam connections guarantee a strong, readable shove). Get shoved
+  far enough and your center crosses the rim — you fall and are out.
+- **Three announced arena modifiers**, each with its own warning banner,
+  sound and ring color:
+  1. **Slippery floor** (yellow warn -> icy ring): every 10 s the floor warns
+     for 2 s, then turns slippery for 4 s (low friction, high drift).
+  2. **Bumper balls** (orange warn): two heavy balls sweep across the arena
+     for 9 s, bouncing off the rim and shoving anyone they hit. Bots dodge
+     them; you should too.
+  3. **Shrinking arena** (red warn): the rim pulls in for 7 s, then eases
+     back out. Anyone outside the rim while it pulls in falls.
+- After 75 s **sudden death** begins: the arena shrinks for good so every
+  round is guaranteed to end.
+- Rounds open with a 3-2-1 countdown (plus one-time tutorial hints on your
+  first round), and show a visible round timer; the result screen reports the
+  winner, round time, your knockouts and your fastest win (stored in
+  `localStorage`).
+- **Reduced motion:** if your OS enables "reduce motion", camera shake is
+  skipped and particle effects are halved.
 
 ![slippery warning](docs/screenshot-slippery.png)
 
@@ -81,15 +94,16 @@ last-one-laughing/
 │       ├── styles.css       # menus, overlays, touch controls
 │       ├── game/            # gameplay layer (no DOM access)
 │       │   ├── constants.ts # all tuning knobs in one place
-│       │   ├── types.ts     # Body/Phase/HitEvent contracts
+│       │   ├── types.ts     # Body/Phase/HitEvent/Obstacle contracts
 │       │   ├── EventBus.ts  # game <-> DOM bridge (framework-free)
 │       │   ├── sfx.ts       # synthesized WebAudio effects
+│       │   ├── motion.ts    # reduced-motion + touch detection
 │       │   ├── scenes/      # GameScene: round flow, HUD, feedback
 │       │   ├── entities/    # Fighter (view+state), BotController (AI)
-│       │   ├── physics/     # ArenaPhysics: impulses, knockback, falling
-│       │   └── modifiers/   # SlipperyFloor state machine
+│       │   ├── physics/     # ArenaPhysics: impulses, knockback, obstacles
+│       │   └── modifiers/   # SlipperyFloor + ModifierDirector (bumpers/shrink)
 │       ├── input/           # keyboard + touch joystick + dash button
-│       └── ui/              # start/pause/result overlays (DOM only)
+│       └── ui/              # start/pause/result overlays + out-card (DOM)
 ├── docs/                    # screenshots
 └── .github/workflows/       # GitHub Pages deploy
 ```
@@ -111,7 +125,9 @@ modifier modules already avoid Phaser imports, so the server can reuse them.
   player would.
 - **Simulation:** fixed-timestep (120 Hz substeps) custom circle physics with
   exponential damping (natural terminal velocity), impulse collisions with a
-  dash "slam" bonus, brief hitstop + camera shake on heavy hits.
+  dash "slam" bonus and a guaranteed minimum slam knockback, kinematic
+  bumper-ball obstacles, brief hitstop + camera shake on heavy hits (shake
+  respects the OS reduce-motion setting).
 - **Safety:** delta-time is clamped; the round auto-pauses on tab hide/window
   blur; input state clears on blur; audio is unlocked on first gesture only;
   `localStorage` access is guarded.
@@ -145,8 +161,8 @@ sudden death, colors, names) lives in
   selector.
 - Sounds are synthesized (no audio toggle - use the device volume; iOS may
   mute WebAudio when the ringer switch is off).
-- Touch controls are not remappable; joystick zone is the left half of the
-  screen by design.
+- Touch controls are not remappable; the floating joystick spawns wherever
+  you drag (full screen) by design.
 - No unit/integration test suite; verification so far = `tsc` typecheck,
   production build, and headless-browser smoke tests of the full round loop.
 - Multiplayer, accounts, persistence (beyond local best time), and analytics

@@ -13,21 +13,24 @@ import {
   DASH,
   FIGHTER_DEFS,
   LOL_TEXTS,
-  LOGICAL_HEIGHT,
+  MODS,
   PALETTE,
   ROUND,
   SPAWN_ANGLES_DEG,
+  TUTORIAL_KEY,
 } from '../constants';
 import { gameBus } from '../EventBus';
 import { sfx } from '../sfx';
+import { isTouchDevice, prefersReducedMotion } from '../motion';
 import { SCENE_GAME } from './SceneKeys';
 import { ArenaPhysics } from '../physics/ArenaPhysics';
 import { SlipperyFloor } from '../modifiers/SlipperyFloor';
+import { ModifierDirector } from '../modifiers/ModifierDirector';
 import { Fighter } from '../entities/Fighter';
 import { BotController } from '../entities/BotController';
 import { playerInput } from '../../input/playerInput';
 import type { FighterDef } from '../constants';
-import type { HitEvent } from '../types';
+import type { HitEvent, Obstacle } from '../types';
 import type { Phase } from '../types';
 
 interface ArenaRefs {
@@ -42,10 +45,11 @@ interface ArenaRefs {
 interface HudRefs {
   timer: Phaser.GameObjects.Text;
   banner: Phaser.GameObjects.Text;
+  modBanner: Phaser.GameObjects.Text;
+  hint: Phaser.GameObjects.Text;
   countdown: Phaser.GameObjects.Text;
   bigText: Phaser.GameObjects.Text;
   winnerSub: Phaser.GameObjects.Text;
-  spectate: Phaser.GameObjects.Text;
   dots: Phaser.GameObjects.Arc[];
 }
 
@@ -61,8 +65,17 @@ export class GameScene extends Phaser.Scene {
   private lastCount = -1;
   private roundTime = 0;
   private suddenDeath = false;
+  /** Radius the arena "wants" to be: ARENA_RADIUS, eroded by sudden death.
+   *  The shrink modifier subtracts its own temporary offset from this. */
+  private baseRadius = ARENA_RADIUS;
   private pulseT = 0;
   private resultTimer?: Phaser.Time.TimerEvent;
+
+  private director!: ModifierDirector;
+  /** Visual + sim handles for live bumper balls. */
+  private bumperViews: { obs: Obstacle; container: Phaser.GameObjects.Container }[] = [];
+  /** True until the first-round tutorial hints have played once ever. */
+  private tutorialActive = false;
 
   /** Live impact-burst emitters (hard cap keeps pile-ups cheap on mobile). */
   private hitEmitters = new Set<Phaser.GameObjects.Particles.ParticleEmitter>();
@@ -105,6 +118,37 @@ export class GameScene extends Phaser.Scene {
         this.hud.banner.setVisible(false).setAlpha(1);
       },
     });
+
+    // Bumpers + shrink are scheduled here; slippery keeps its own cycle.
+    // Banners live in separate HUD slots so warnings never overwrite each
+    // other, and the two systems compose (icy floor + bumpers = chaos, on
+    // purpose).
+    this.director = new ModifierDirector({
+      onWarn: (kind) => {
+        if (kind === 'bumpers') {
+          this.hud.modBanner.setText('Bumper balls incoming!').setColor('#ff9f43');
+          sfx.thud();
+        } else {
+          this.hud.modBanner.setText('Arena shrinking!').setColor('#ff5d5d');
+          sfx.shrinkWarn();
+        }
+        this.hud.modBanner.setVisible(true).setAlpha(1);
+      },
+      onActivate: (kind) => {
+        if (kind === 'bumpers') this.spawnBumpers();
+        this.hud.modBanner.setAlpha(0.75);
+      },
+      onEnd: (kind) => {
+        if (kind === 'bumpers') this.despawnBumpers();
+        this.hud.modBanner.setVisible(false).setAlpha(1);
+      },
+    });
+
+    try {
+      this.tutorialActive = localStorage.getItem(TUTORIAL_KEY) !== '1';
+    } catch {
+      this.tutorialActive = true;
+    }
 
     this.resetWorld();
     this.setPhase('idle');
@@ -193,12 +237,26 @@ export class GameScene extends Phaser.Scene {
       .setDepth(40)
       .setVisible(false);
 
-    const spectate = this.add
-      .text(cx, LOGICAL_HEIGHT - 150, "You're out - spectating", {
+    const modBanner = this.add
+      .text(cx, 152, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '32px',
+        fontSize: '28px',
         fontStyle: 'bold',
-        color: '#8b93b8',
+        color: '#ff9f43',
+        resolution: 2,
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(30)
+      .setVisible(false);
+
+    const hint = this.add
+      .text(cx, ARENA_CENTER.y + 235, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '27px',
+        fontStyle: 'bold',
+        color: '#aab2d5',
+        stroke: '#0e1120',
+        strokeThickness: 5,
         resolution: 2,
       })
       .setOrigin(0.5, 0.5)
@@ -226,7 +284,7 @@ export class GameScene extends Phaser.Scene {
         .setStrokeStyle(2, 0xffffff, 0.25),
     );
 
-    this.hud = { timer, banner, countdown, bigText, winnerSub, spectate, dots };
+    this.hud = { timer, banner, modBanner, hint, countdown, bigText, winnerSub, dots };
   }
 
   // ------------------------------------------------------------ round flow
@@ -258,13 +316,18 @@ export class GameScene extends Phaser.Scene {
   private resetWorld(): void {
     this.phys.arenaRadius = ARENA_RADIUS;
     this.phys.clearFreeze();
+    this.phys.obstacles = [];
     this.roundTime = 0;
     this.suddenDeath = false;
+    this.baseRadius = ARENA_RADIUS;
     this.pulseT = 0;
     this.slippery.silence();
+    this.director?.reset();
     this.lastFxAt.clear();
     for (const em of this.hitEmitters) em.destroy();
     this.hitEmitters.clear();
+    this.bumperViews.forEach((b) => b.container.destroy());
+    this.bumperViews = [];
 
     this.fighters.forEach((f, i) => {
       f.reset();
@@ -291,11 +354,14 @@ export class GameScene extends Phaser.Scene {
     this.tweens.killTweensOf(this.hud.bigText);
     this.tweens.killTweensOf(this.hud.winnerSub);
     this.tweens.killTweensOf(this.hud.banner);
+    this.tweens.killTweensOf(this.hud.modBanner);
+    this.tweens.killTweensOf(this.hud.hint);
     this.hud.countdown.setVisible(false).setAlpha(1).setScale(1).setText('');
     this.hud.bigText.setVisible(false).setAlpha(1).setScale(1).setText('');
     this.hud.winnerSub.setVisible(false).setAlpha(1).setScale(1).setText('');
     this.hud.banner.setVisible(false).setAlpha(1);
-    this.hud.spectate.setVisible(false);
+    this.hud.modBanner.setVisible(false).setAlpha(1);
+    this.hud.hint.setVisible(false).setAlpha(1);
     this.hud.timer.setVisible(true).setText('0:00');
     this.hud.dots.forEach((d) => d.setAlpha(0.95).setScale(1));
   }
@@ -329,6 +395,7 @@ export class GameScene extends Phaser.Scene {
       center: ARENA_CENTER,
       radius: this.phys.arenaRadius,
       slippery: false,
+      obstacles: this.phys.obstacles,
     };
     for (const bot of this.bots) bot.update(dt, ctx);
     this.phys.step(dt, false, 'clamp');
@@ -349,11 +416,32 @@ export class GameScene extends Phaser.Scene {
         ease: 'Quad.easeOut',
       });
       sfx.tick();
+      // First tutorial hint rides along with the 3-2-1 (first round only).
+      if (this.tutorialActive) {
+        this.hud.hint
+          .setText(isTouchDevice() ? 'Drag anywhere to move' : 'Move with WASD or arrows')
+          .setVisible(true)
+          .setAlpha(1);
+      }
     }
     if (this.countdownT <= 0) {
       this.setPhase('playing');
       this.hud.countdown.setText('GO!');
       sfx.go();
+      // Second tutorial hint lands right at GO, and fades on its own.
+      if (this.tutorialActive) {
+        this.hud.hint
+          .setText(isTouchDevice() ? 'Tap DASH to slam them off!' : 'Press Space to dash!')
+          .setVisible(true)
+          .setAlpha(1);
+        this.tweens.add({
+          targets: this.hud.hint,
+          alpha: 0,
+          delay: 3400,
+          duration: 400,
+          onComplete: () => this.hud.hint.setVisible(false),
+        });
+      }
       this.tweens.add({
         targets: this.hud.countdown,
         alpha: 0,
@@ -370,6 +458,7 @@ export class GameScene extends Phaser.Scene {
       center: ARENA_CENTER,
       radius: this.phys.arenaRadius,
       slippery: false,
+      obstacles: this.phys.obstacles,
     };
     for (const bot of this.bots) bot.update(dt, ctx);
     this.phys.step(dt, false, 'clamp');
@@ -381,9 +470,19 @@ export class GameScene extends Phaser.Scene {
     this.hud.timer.setText(fmtTime(this.roundTime));
 
     this.slippery.update(dt);
+    this.director.update(dt);
 
     if (!this.suddenDeath && this.roundTime > ROUND.suddenDeathAfter) this.beginSuddenDeath();
-    if (this.suddenDeath) this.shrinkArena(dt);
+    if (this.suddenDeath) {
+      // Sudden death erodes the BASE radius; the shrink modifier subtracts
+      // its own temporary offset further down.
+      this.baseRadius = Math.max(ARENA_MIN_RADIUS, this.baseRadius - ROUND.suddenDeathShrink * dt);
+    }
+    this.phys.arenaRadius = Math.max(ARENA_MIN_RADIUS, this.baseRadius - this.director.shrinkOffset());
+
+    // Tutorial fallback: stop hinting after the opening seconds even if the
+    // player never dashed.
+    if (this.tutorialActive && this.roundTime > 8) this.completeTutorial();
 
     // Player input (bridged from the DOM input layer).
     const player = this.player;
@@ -400,15 +499,23 @@ export class GameScene extends Phaser.Scene {
       center: ARENA_CENTER,
       radius: this.phys.arenaRadius,
       slippery: this.slippery.isSlippery(),
+      obstacles: this.phys.obstacles,
     };
     for (const bot of this.bots) bot.update(dt, ctx);
 
     for (const f of this.fighters) {
-      if (f.dashQueued && f.requestDash() && f === this.player) sfx.dash();
+      if (f.dashQueued && f.requestDash()) {
+        if (f === this.player) {
+          sfx.dash();
+          vibrate(10);
+          this.completeTutorial();
+        }
+      }
     }
 
     this.phys.step(dt, this.slippery.isSlippery(), 'open');
     this.updateArenaVisuals();
+    this.syncBumpers(dt);
     this.fighters.forEach((f) => f.syncVisual(dt));
     gameBus.emit('dash-cd', { frac: player.dashCooldown / DASH.cooldown });
 
@@ -432,34 +539,42 @@ export class GameScene extends Phaser.Scene {
     this.lastFxAt.set(e.victim, now);
 
     const dirDeg = (Math.atan2(e.dirY, e.dirX) * 180) / Math.PI;
+    // Reduced-motion users: keep the hitstop + flash (they communicate timing)
+    // but skip camera shake, halve particles and halve the knock offset.
+    const rm = prefersReducedMotion();
+    const fx = rm ? 0.5 : 1;
 
     if (e.big) {
       e.victim.flashWhite();
       e.victim.squash();
-      e.victim.knock(e.dirX, e.dirY, 1);
+      e.victim.knock(e.dirX, e.dirY, rm ? 0.5 : 1);
       e.attacker?.squash();
       e.attacker?.knock(-e.dirX, -e.dirY, 0.35); // view-only recoil
       this.phys.freezeFor(COMBAT.freezeMs);
-      // Subtle shake, scaled by how hard the hit actually was.
-      const k = Phaser.Math.Clamp((e.deltaV - COMBAT.dashBigDeltaV) / 700, 0.35, 1);
-      this.cameras.main.shake(COMBAT.shakeMs * k, COMBAT.shakeIntensity * k);
+      if (!rm) {
+        // Subtle shake, scaled by how hard the hit actually was.
+        const k = Phaser.Math.Clamp((e.deltaV - COMBAT.dashBigDeltaV) / 700, 0.35, 1);
+        this.cameras.main.shake(COMBAT.shakeMs * k, COMBAT.shakeIntensity * k);
+      }
       this.impactFlash(e.x, e.y);
-      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 26, 12, 380);
+      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 26, Math.round(12 * fx), 380);
       if (e.attacker) {
         // Small counter-spray back toward the attacker reads as impact debris.
-        this.impactBurst(e.x, e.y, e.attacker.def.color, dirDeg + 180, 34, 4, 300);
+        this.impactBurst(e.x, e.y, e.attacker.def.color, dirDeg + 180, 34, Math.round(4 * fx), 300);
       }
-      sfx.hit(1);
+      if (e.attacker) sfx.hit(1);
+      else sfx.bump(1);
       vibrate(25);
     } else if (e.deltaV > 380) {
       e.victim.squash();
-      e.victim.knock(e.dirX, e.dirY, 0.65);
-      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 30, 6, 300);
-      sfx.hit(0.5);
+      e.victim.knock(e.dirX, e.dirY, 0.65 * fx + 0.35);
+      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 30, Math.round(6 * fx), 300);
+      if (e.attacker) sfx.hit(0.5);
+      else sfx.bump(0.4);
     } else {
       // Light contact: minimal directional feedback, silent.
       e.victim.knock(e.dirX, e.dirY, 0.35);
-      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 30, 3, 230);
+      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 30, Math.round(3 * fx), 230);
     }
   }
 
@@ -499,7 +614,8 @@ export class GameScene extends Phaser.Scene {
     if (dot) dot.setAlpha(0.18).setScale(0.7);
 
     if (f.isPlayer) {
-      this.hud.spectate.setVisible(true);
+      // The DOM out-card (UIManager) takes over from here: it tells the
+      // player they're out and offers "watch who wins" vs "leave match".
       gameBus.emit('player-out', {});
     }
   }
@@ -508,8 +624,15 @@ export class GameScene extends Phaser.Scene {
     if (this.phase !== 'playing') return;
     this.setPhase('over');
     this.slippery.silence();
-    this.hud.spectate.setVisible(false);
+    this.director.cancel();
+    this.despawnBumpers();
+    this.hud.modBanner.setVisible(false);
+    this.hud.hint.setVisible(false);
     this.hud.banner.setVisible(false);
+    // Snap the arena back to its base size for the victory lap; resetWorld
+    // does the full restore on the next round.
+    this.phys.arenaRadius = Math.max(ARENA_MIN_RADIUS, this.baseRadius);
+    this.applyArenaShapes(this.phys.arenaRadius);
 
     const text = this.hud.bigText;
     text
@@ -563,22 +686,23 @@ export class GameScene extends Phaser.Scene {
 
   private beginSuddenDeath(): void {
     this.suddenDeath = true;
-    this.hud.banner.setText('Arena shrinking!').setColor('#ff5d5d').setVisible(true).setAlpha(1);
+    // No further modifier windows once sudden death begins; an active window
+    // (shrink) eases back out gracefully instead of fighting the erosion.
+    this.director.cancel();
+    this.hud.banner
+      .setText('Sudden death - arena shrinking!')
+      .setColor('#ff5d5d')
+      .setVisible(true)
+      .setAlpha(1);
     sfx.warn();
   }
 
-  private shrinkArena(dt: number): void {
-    const r = Math.max(ARENA_MIN_RADIUS, this.phys.arenaRadius - ROUND.suddenDeathShrink * dt);
-    this.phys.arenaRadius = r;
-    this.arena.fill.setRadius(r);
-    this.arena.tint.setRadius(r);
-    this.arena.ring.setRadius(r);
-    this.arena.inner1.setRadius(r * 0.66);
-    this.arena.inner2.setRadius(r * 0.33);
-  }
-
-  /** Ring color / banner pulse / icy tint, driven per frame while playing. */
+  /** Ring color / radius / banner pulse / icy tint, driven per frame while
+   *  playing. The radius is applied from phys.arenaRadius so sudden death and
+   *  the shrink modifier share one source of truth. */
   private updateArenaVisuals(): void {
+    this.applyArenaShapes(this.phys.arenaRadius);
+
     const targetTint = this.slippery.isSlippery() ? 0.18 : 0;
     const tint = this.arena.tint;
     tint.setAlpha(Phaser.Math.Linear(tint.alpha, targetTint, 0.08));
@@ -589,6 +713,17 @@ export class GameScene extends Phaser.Scene {
       this.arena.ring
         .setStrokeStyle(6, lerpColor(PALETTE.danger, 0xffffff, pulse * 0.35), 1)
         .setAlpha(0.75 + 0.25 * pulse);
+      return;
+    }
+    // Modifier ring language: orange pulse for bumpers, red pulse for the
+    // shrinking arena (distinct from the icy/warn slippery colors).
+    if (this.director.isWarning || this.director.isActive) {
+      const kind = this.director.kind;
+      const base = kind === 'bumpers' ? PALETTE.bumper : PALETTE.danger;
+      const pulse = 0.5 + 0.5 * Math.sin(this.pulseT * 8);
+      this.arena.ring
+        .setStrokeStyle(6, lerpColor(base, 0xffffff, pulse * 0.3), 1)
+        .setAlpha(0.85 + 0.15 * pulse);
       return;
     }
     if (state === 'warning') {
@@ -602,6 +737,92 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.arena.ring.setStrokeStyle(6, PALETTE.arenaRing, 1).setAlpha(1);
     }
+  }
+
+  /** Mirror the physics radius into the arena shapes. */
+  private applyArenaShapes(r: number): void {
+    this.arena.fill.setRadius(r);
+    this.arena.tint.setRadius(r);
+    this.arena.ring.setRadius(r);
+    this.arena.inner1.setRadius(r * 0.66);
+    this.arena.inner2.setRadius(r * 0.33);
+  }
+
+  // ------------------------------------------------------------ modifiers
+
+  /** Spawn the bumper-ball window: two balls enter from opposite edges and
+   *  sweep across the arena, bouncing off the rim and each other. */
+  private spawnBumpers(): void {
+    this.despawnBumpers(); // safety: never double-spawn
+    const R = this.phys.arenaRadius;
+    const startDeg = Math.random() * 360;
+    for (let i = 0; i < MODS.bumperCount; i++) {
+      const a = ((startDeg + i * (360 / MODS.bumperCount)) * Math.PI) / 180;
+      const spawnR = Math.max(120, R - 90);
+      const ox = ARENA_CENTER.x + Math.cos(a) * spawnR;
+      const oy = ARENA_CENTER.y + Math.sin(a) * spawnR;
+      // Aim roughly across the center with some scatter so paths differ.
+      const dir = a + Math.PI + (Math.random() - 0.5) * 1.2;
+      const obs: Obstacle = {
+        pos: { x: ox, y: oy },
+        vel: { x: Math.cos(dir) * MODS.bumperSpeed, y: Math.sin(dir) * MODS.bumperSpeed },
+        radius: MODS.bumperRadius,
+      };
+      this.phys.obstacles.push(obs);
+
+      const container = this.add.container(ox, oy).setDepth(8);
+      const ring = this.add.circle(0, 0, obs.radius).setStrokeStyle(6, PALETTE.bumper, 1);
+      const core = this.add.circle(0, 0, obs.radius - 10, PALETTE.bumperCore, 1);
+      const mark = this.add.circle(obs.radius * 0.45, 0, 5, PALETTE.bumper, 0.9);
+      container.add([core, ring, mark]);
+      container.setScale(0.1);
+      this.tweens.add({ targets: container, scale: 1, duration: 260, ease: 'Back.easeOut' });
+      this.bumperViews.push({ obs, container });
+    }
+  }
+
+  private despawnBumpers(): void {
+    if (this.bumperViews.length === 0) return;
+    this.phys.obstacles = [];
+    for (const b of this.bumperViews) {
+      this.tweens.killTweensOf(b.container);
+      this.tweens.add({
+        targets: b.container,
+        scale: 0.05,
+        alpha: 0,
+        duration: 220,
+        ease: 'Quad.easeIn',
+        onComplete: () => b.container.destroy(),
+      });
+    }
+    this.bumperViews = [];
+  }
+
+  private syncBumpers(dt: number): void {
+    for (const b of this.bumperViews) {
+      b.container.setPosition(b.obs.pos.x, b.obs.pos.y);
+      b.container.rotation += dt * 1.8;
+    }
+  }
+
+  // -------------------------------------------------------------- tutorial
+
+  /** Mark the first-round hints as done (persisted) and fade the hint out. */
+  private completeTutorial(): void {
+    if (!this.tutorialActive) return;
+    this.tutorialActive = false;
+    try {
+      localStorage.setItem(TUTORIAL_KEY, '1');
+    } catch {
+      /* private mode: hints simply replay next session */
+    }
+    this.tweens.killTweensOf(this.hud.hint);
+    this.tweens.add({
+      targets: this.hud.hint,
+      alpha: 0,
+      duration: 300,
+      onComplete: () => this.hud.hint.setVisible(false).setAlpha(1),
+    });
   }
 
   // ------------------------------------------------------------- fx helpers

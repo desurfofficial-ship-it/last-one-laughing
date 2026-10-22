@@ -47,10 +47,11 @@
         <p class="tagline">Knock everyone off the arena. Don't get pushed.</p>
         <button id="btn-play" class="btn primary" type="button">Play</button>
         <p class="howto">
-          <strong>Mobile:</strong> left thumb to move, DASH to slam.<br />
+          <strong>Mobile:</strong> drag anywhere to move, DASH to slam.<br />
           <strong>Desktop:</strong> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows to move,
           <kbd>Space</kbd> to dash, <kbd>P</kbd> to pause.<br />
-          Every 10s the floor turns slippery for a moment. Last one standing wins.
+          Watch for the warnings: slippery floor, bumper balls, shrinking arena.
+          Last one standing wins.
         </p>
       </div>
 
@@ -76,6 +77,16 @@
             <button id="btn-restart-2" class="btn primary" type="button">Play again</button>
             <button id="btn-menu-2" class="btn ghost" type="button">Menu</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Shown when the player is knocked out: wait for the winner or leave. -->
+      <div id="out-card" class="hidden" role="status">
+        <p class="out-title">You're out!</p>
+        <p class="out-sub">Stick around to see who wins - or leave the match now.</p>
+        <div class="btn-row">
+          <button id="btn-watch" class="btn small" type="button">Watch who wins</button>
+          <button id="btn-leave" class="btn ghost small" type="button">Leave match</button>
         </div>
       </div>
     </div>

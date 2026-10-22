@@ -25,6 +25,15 @@ export interface Body {
 
 export type Phase = 'idle' | 'countdown' | 'playing' | 'over';
 
+/** Kinematic moving obstacle (arena modifier "bumper balls").
+ *  Engine-agnostic: infinite mass, bounces inside the arena circle,
+ *  shoves fighters but is never moved by them. */
+export interface Obstacle {
+  pos: { x: number; y: number };
+  vel: { x: number; y: number };
+  radius: number;
+}
+
 export interface HitEvent<F extends Body> {
   /** Approximate contact point. */
   x: number;

@@ -46,12 +46,11 @@ body {
   z-index: 10;
 }
 
+/* One-handed play: the floating joystick can be spawned ANYWHERE on screen,
+   so a single thumb can reach movement from any grip. Buttons sit on top. */
 #joystick-zone {
   position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 55%;
-  height: 62%;
+  inset: 0;
   pointer-events: auto;
   touch-action: none;
   display: none;
@@ -82,16 +81,16 @@ body {
 
 #dash-button {
   position: fixed;
-  right: calc(20px + env(safe-area-inset-right));
-  bottom: calc(26px + env(safe-area-inset-bottom));
-  width: 96px;
-  height: 96px;
+  right: calc(18px + env(safe-area-inset-right));
+  bottom: calc(30px + env(safe-area-inset-bottom));
+  width: 108px;
+  height: 108px;
   border-radius: 50%;
   border: 3px solid rgba(255, 255, 255, 0.28);
   background: rgba(21, 27, 48, 0.72);
   color: var(--text);
   font-weight: 800;
-  font-size: 15px;
+  font-size: 17px;
   letter-spacing: 0.08em;
   pointer-events: auto;
   touch-action: none;
@@ -172,6 +171,44 @@ body[data-player-out='1'] #dash-button {
   display: none;
 }
 
+/* ---------- Out card (player eliminated) ---------- */
+#out-card {
+  position: fixed;
+  left: 50%;
+  bottom: calc(26px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(92vw, 360px);
+  background: rgba(21, 27, 48, 0.92);
+  border: 1px solid rgba(255, 93, 93, 0.35);
+  border-radius: 16px;
+  padding: 14px 16px 16px;
+  text-align: center;
+  pointer-events: auto;
+  z-index: 12;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#out-card.hidden {
+  display: none;
+}
+
+#out-card .out-title {
+  margin: 0;
+  font-weight: 900;
+  font-size: 20px;
+  color: var(--danger);
+}
+
+#out-card .out-sub {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 /* ---------- DOM menus ---------- */
 #ui-layer {
   position: fixed;
@@ -194,6 +231,8 @@ body[data-player-out='1'] #dash-button {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   pointer-events: auto;
+  /* Full-screen menus always sit above the small out-card. */
+  z-index: 2;
 }
 
 .overlay.hidden {
@@ -298,6 +337,13 @@ kbd {
   transform: scale(0.97);
 }
 
+.btn.small {
+  padding: 11px 18px;
+  font-size: 14px;
+  border-radius: 11px;
+  min-width: 0;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -343,5 +389,16 @@ kbd {
   }
   50% {
     transform: translateY(-6px);
+  }
+}
+
+/* Honor the OS "reduce motion" setting for decorative DOM animation. */
+@media (prefers-reduced-motion: reduce) {
+  .dots span {
+    animation: none;
+  }
+
+  .btn:active {
+    transform: none;
   }
 }

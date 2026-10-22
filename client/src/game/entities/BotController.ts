@@ -8,13 +8,15 @@
  */
 
 import type { Fighter } from './Fighter';
-import type { Phase } from '../types';
+import type { Obstacle, Phase } from '../types';
 
 export interface BotCtx {
   phase: Phase;
   center: { x: number; y: number };
   radius: number;
   slippery: boolean;
+  /** Active bumper balls (empty most of the round). */
+  obstacles: readonly Obstacle[];
 }
 
 const THINK_MIN = 0.1;
@@ -106,6 +108,19 @@ export class BotController {
       const w = danger * 1.7;
       dx = dx * (1 - Math.min(0.95, danger)) + nx * w;
       dy = dy * (1 - Math.min(0.95, danger)) + ny * w;
+    }
+
+    // Dodge bumper balls: repulsion grows as a ball closes in.
+    for (const o of ctx.obstacles) {
+      const ox = me.pos.x - o.pos.x;
+      const oy = me.pos.y - o.pos.y;
+      const od = Math.hypot(ox, oy) || 0.0001;
+      const range = o.radius + me.radius + 130;
+      if (od < range) {
+        const w = 1.2 * (1 - od / range);
+        dx += (ox / od) * w;
+        dy += (oy / od) * w;
+      }
     }
 
     // Steering noise so bots feel less mechanical.
