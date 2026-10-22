@@ -37,8 +37,8 @@ export class MpUI {
   private panel = el('mp-lobby');
   private nameInput = el<HTMLInputElement>('mp-name');
   private codeInput = el<HTMLInputElement>('mp-code');
-  private btnCreate = el('mp-create');
-  private btnJoin = el('mp-join');
+  private btnCreate = el<HTMLButtonElement>('mp-create');
+  private btnJoin = el<HTMLButtonElement>('mp-join');
   private btnLeave = el('mp-leave');
   private roomView = el('mp-room');
   private codeLabel = el('mp-code-label');
@@ -53,6 +53,8 @@ export class MpUI {
   private myPid = 0;
   private unsub: (() => void)[] = [];
   private lastRenderAt = 0;
+  /** True while a join is retrying (server likely cold-starting). */
+  private waking = false;
 
   constructor() {
     this.nameInput.value = readName();
@@ -82,16 +84,7 @@ export class MpUI {
     });
     this.btnCopy.addEventListener('click', () => {
       sfx.ui();
-      const url = this.shareUrl();
-      navigator.clipboard?.writeText(url).then(
-        () => {
-          this.btnCopy.textContent = 'Link copied!';
-          window.setTimeout(() => (this.btnCopy.textContent = 'Copy invite link'), 1600);
-        },
-        () => {
-          window.prompt('Copy this invite link:', url);
-        },
-      );
+      void this.shareInvite();
     });
     this.btnReady.addEventListener('click', () => {
       sfx.ui();
@@ -112,22 +105,33 @@ export class MpUI {
       mpSession.on('status', () => this.render()),
       mpSession.on('state', () => this.renderThrottled()),
       mpSession.on('entered', (p: { pid: number; code: string }) => {
+        this.waking = false;
         this.myPid = p.pid;
         this.openPanel(); // also covers silent rejoins after a page reload
       }),
       mpSession.on('error', (msg: string) => {
+        this.waking = false;
         this.errorLine.textContent = msg;
         this.errorLine.classList.remove('hidden');
+        // Connection losses can happen while the panel is hidden (mid-match);
+        // surface the failure instead of leaving a dead screen.
+        if (!mpSession.connected) this.openPanel();
       }),
       mpSession.on('server-error', (e: { code: string; message: string }) => {
         this.errorLine.textContent = e.message;
         this.errorLine.classList.remove('hidden');
+      }),
+      // Free-tier hosts sleep when idle; surface the retry instead of silence.
+      mpSession.on('connecting-retry', () => {
+        this.waking = true;
+        if (!mpSession.connected) this.render();
       }),
       mpSession.on('left', (p: { intentional: boolean }) => {
         // Only a deliberate leave resets identity; an unexpected drop keeps
         // the seat (and myPid) while the SDK auto-reconnection recovers.
         if (p.intentional) {
           this.myPid = 0;
+          this.waking = false;
           this.render();
         }
       }),
@@ -209,6 +213,29 @@ export class MpUI {
     }
   }
 
+  /** Web Share wins on mobile (native share sheet); clipboard elsewhere. */
+  private async shareInvite(): Promise<void> {
+    const url = this.shareUrl();
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ url });
+        return;
+      } catch {
+        /* user cancelled - fall through to clipboard */
+      }
+    }
+    const copied = await navigator.clipboard?.writeText(url).then(
+      () => true,
+      () => false,
+    );
+    if (copied) {
+      this.btnCopy.textContent = 'Copied';
+      window.setTimeout(() => (this.btnCopy.textContent = 'Copy link'), 1600);
+    } else {
+      window.prompt('Copy this invite link:', url);
+    }
+  }
+
   private openPanel(): void {
     this.panel.classList.remove('hidden');
     this.render();
@@ -276,22 +303,29 @@ export class MpUI {
     this.btnReady.classList.toggle('primary', !this.me()?.ready);
     this.btnStart.classList.toggle('hidden', !iAmHost);
     this.btnStart.disabled = !inLobby || !allReady;
-    this.btnStart.textContent = inLobby
-      ? allReady
-        ? 'Start match'
-        : 'Waiting for ready players…'
-      : 'Match in progress';
+    this.btnStart.textContent = allReady ? 'Start match' : 'Waiting for ready players…';
 
-    this.statusLine.textContent = inLobby
-      ? `${present.length} of 8 players here - share the code or link!`
-      : 'Match running - good luck!';
+    // The roster + buttons are the interface; a running match needs no copy.
+    this.statusLine.textContent = '';
   }
 
   private renderLobbyForm(): void {
     el('mp-form').classList.remove('hidden');
     this.roomView.classList.add('hidden');
-    this.statusLine.textContent = MP_ENDPOINT
-      ? 'Create a private room and share the code, or join a friend.'
-      : 'Multiplayer server not configured.';
+
+    if (!MP_ENDPOINT) {
+      // Deployment state: this build has no multiplayer server wired up.
+      this.statusLine.textContent = 'Multiplayer is not configured.';
+      this.btnCreate.disabled = true;
+      this.btnJoin.disabled = true;
+      return;
+    }
+
+    // Session states: connecting (first attempt) vs waking (retry after a
+    // cold start). Everything else stays silent - the form IS the interface.
+    const connecting = mpSession.status === 'connecting';
+    this.btnCreate.disabled = connecting;
+    this.btnJoin.disabled = connecting;
+    this.statusLine.textContent = connecting ? (this.waking ? 'Waking the server…' : 'Connecting…') : '';
   }
 }

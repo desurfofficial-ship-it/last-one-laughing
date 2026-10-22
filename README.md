@@ -192,6 +192,9 @@ Stage 2 status: shipped. Solo mode is unchanged.
 
 ## Production deployment (multiplayer)
 
+**Full guide with platform verification, free-tier limits/costs, domains,
+rollback and the two-device internet test: [DEPLOY.md](DEPLOY.md).**
+
 One Node service serves both the WebSocket rooms and the static client
 build (same origin = no CORS, no separate CDN step):
 
@@ -201,13 +204,17 @@ npm run build -w client
 PORT=8787 NODE_ENV=production npm run start -w server   # tsx runtime
 ```
 
-Deploy this repo to any Node 22+ host (Fly.io, Render, Railway, a VPS
-behind nginx). Host specifics:
+Ready-made configs (platforms verified against current docs in DEPLOY.md):
 
-- **Fly.io:** `fly launch` with `[[http_service]] internal_port = 8787`,
-  or a 2-line Dockerfile (`FROM node:22-slim` + the three commands above).
-- **Render/Railway:** build command `npm ci && npm run build -w client`,
-  start command `npm run start -w server`; the platform injects `PORT`.
+- **Render (recommended, free tier):** `render.yaml` blueprint - New ->
+  Blueprint -> pick this repo. Health check `/health`; note the free tier
+  sleeps after 15 min idle (~1 min wake; the client shows "Waking the
+  server…" and retries).
+- **Fly.io:** `fly.toml` + `Dockerfile` - `fly launch --no-deploy && fly
+  deploy`. Usage-based (no ongoing free tier for new accounts).
+- **HTTPS/WSS:** hosts terminate TLS at the edge (`force_https` on Fly,
+  automatic on Render); the client upgrades `http://` endpoints to
+  `https://` on HTTPS pages, so plain-HTTP endpoints cannot ship.
 - **Env vars** (all optional): `PORT` (default 8787), `NODE_ENV`
   (`production` disables dev CORS), `LOL_CLIENT_DIST` (client build dir),
   `LOL_ALLOWED_ORIGIN` (comma-separated origins for cross-origin clients,
@@ -221,11 +228,11 @@ behind nginx). Host specifics:
   you would add the Colyseus Redis driver/presence - deliberately out of
   scope for this slice.
 
-The GitHub Pages deploy (`.github/workflows/deploy.yml`) continues to
-publish the solo game. Pages is static-only, so online play from Pages
-requires setting `VITE_MP_ENDPOINT` at build time to a deployed game
-server URL; the simplest multiplayer deployment is the single Node
-service above.
+The GitHub Pages deploy (`.github/workflows/deploy.yml`) publishes the
+static client and reads the repo Actions variable `VITE_MP_ENDPOINT`
+(server URL). Until it is set, Pages shows the clean "Multiplayer is not
+configured." state; the simplest multiplayer deployment is the single
+Node service above (it also serves the game itself).
 
 ## Architecture notes
 

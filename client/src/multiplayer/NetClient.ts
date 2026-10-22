@@ -17,9 +17,30 @@ import type { MatchEvent } from '../../../shared/src/net/protocol';
 
 /** Multiplayer endpoint: same origin by default (the game server hosts the
  *  client build); override with VITE_MP_ENDPOINT when the client ships
- *  from a static host (e.g. GitHub Pages) and the server lives elsewhere. */
-export const MP_ENDPOINT: string =
-  (import.meta.env?.VITE_MP_ENDPOINT as string | undefined) || window.location.origin;
+ *  from a static host (e.g. GitHub Pages) and the server lives elsewhere.
+ *
+ *  Production rules baked in here:
+ *   - HTTPS pages always get a secure endpoint (http endpoints are upgraded
+ *     to https; the hosts we target terminate TLS at the edge).
+ *   - A Pages build without VITE_MP_ENDPOINT resolves to '' so the lobby can
+ *     show its "not configured" state instead of doomed joins. */
+const VITE_ENDPOINT = ((import.meta.env?.VITE_MP_ENDPOINT as string | undefined) ?? '').trim();
+
+function resolveEndpoint(): string {
+  if (import.meta.env.PROD && !VITE_ENDPOINT && /\.github\.io$/.test(window.location.hostname)) {
+    return '';
+  }
+  const base = VITE_ENDPOINT || window.location.origin;
+  try {
+    const u = new URL(base);
+    if (window.location.protocol === 'https:' && u.protocol === 'http:') u.protocol = 'https:';
+    return u.toString().replace(/\/+$/, '');
+  } catch {
+    return base;
+  }
+}
+
+export const MP_ENDPOINT: string = resolveEndpoint();
 
 const TOKEN_KEY = 'lol_mp_reconnect';
 
@@ -35,7 +56,12 @@ export type MpStatus =
 type Handler = (payload: any) => void;
 
 export class MpSession {
-  readonly client = new Client(MP_ENDPOINT);
+  /** Lazily built so a misconfigured deploy never throws at import time. */
+  private _client: Client | null = null;
+  get client(): Client {
+    if (!this._client) this._client = new Client(MP_ENDPOINT || window.location.origin);
+    return this._client;
+  }
   room: Room<GameStateT> | null = null;
   myPid = 0;
   code = '';
@@ -90,13 +116,19 @@ export class MpSession {
   // --------------------------------------------------------------- joins
 
   async create(name: string): Promise<void> {
+    this.assertNotConfigured();
     await this.enter(() => this.client.create('arena', { name }, GameState as any), name);
   }
 
   async join(code: string, name: string): Promise<void> {
+    this.assertNotConfigured();
     const clean = code.trim().toUpperCase();
     if (!/^[A-Z2-9]{6}$/.test(clean)) throw new Error('Room codes are 6 letters/digits.');
     await this.enter(() => this.client.joinById(clean, { name }, GameState as any), name);
+  }
+
+  private assertNotConfigured(): void {
+    if (!MP_ENDPOINT) throw new Error('mp_not_configured');
   }
 
   /** Re-enter a room after a drop (page reload included). */
@@ -114,7 +146,7 @@ export class MpSession {
     this.name = name;
     this.setStatus('connecting');
     try {
-      const room = await joinFn();
+      const room = await this.joinWithRetry(joinFn);
       this.room = room;
       try {
         sessionStorage.setItem(TOKEN_KEY, room.reconnectionToken);
@@ -134,6 +166,24 @@ export class MpSession {
       this.setStatus('error');
       this.emit('error', this.lastError);
       throw err;
+    }
+  }
+
+  /**
+   * Free-tier hosts spin idle servers down; the first join after a lull
+   * waits out a cold start of up to ~1 minute. Retry network-class
+   * failures in production before surfacing an error (dev: one attempt).
+   */
+  private async joinWithRetry(joinFn: () => Promise<Room<GameStateT>>): Promise<Room<GameStateT>> {
+    const attempts = import.meta.env.PROD ? 7 : 1;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await joinFn();
+      } catch (err) {
+        if (attempt >= attempts || !isNetworkError(err)) throw err;
+        this.emit('connecting-retry', { attempt, attempts });
+        await new Promise((r) => setTimeout(r, 8000));
+      }
     }
   }
 
@@ -280,11 +330,20 @@ export class MpSession {
 
 function explainJoinError(err: any): string {
   const msg = String(err?.message ?? err ?? '');
+  if (/mp_not_configured/i.test(msg)) return 'Multiplayer is not configured for this build.';
   if (/room not found|invalid room/i.test(msg)) return 'No room with that code.';
   if (/locked|full/i.test(msg)) return 'That room is full or mid-match - try again soon.';
   if (/failed to reconnect|expired/i.test(msg)) return 'Your seat expired - join again.';
   if (/network|fetch|WebSocket/i.test(msg)) return 'Could not reach the multiplayer server.';
   return msg || 'Connection failed.';
+}
+
+/** Cold starts / dead servers surface as fetch or websocket failures. */
+function isNetworkError(err: unknown): boolean {
+  const msg = String((err as any)?.message ?? err ?? '');
+  return /network|fetch|websocket|econnrefused|bad gateway|service unavailable|timeout|unavailable|upgrade required/i.test(
+    msg,
+  );
 }
 
 export const mpSession = new MpSession();

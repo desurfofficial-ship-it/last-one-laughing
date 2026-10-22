@@ -1,0 +1,35 @@
+# Fly.io configuration (alternative to Render; see DEPLOY.md).
+# Deploy: fly launch --no-deploy && fly deploy
+#
+# Fly Machines auto-stop/auto-start keep costs near zero when idle, but a
+# stopped machine adds a short boot (~1-2 s) to the first connection, and
+# Fly has NO ongoing free tier for new accounts (usage-based billing).
+
+app = "last-one-laughing"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 8787
+  # TLS terminates at Fly's edge; this also upgrades plain HTTP requests.
+  force_https = true
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  # Zero always-on machines: pay only for seconds actually played.
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    path = "/health"

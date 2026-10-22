@@ -25,7 +25,13 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npm run build -w client
+      - name: Build client
+        run: npm run build -w client
+        env:
+          # Repo variable (Settings → Secrets and variables → Actions →
+          # Variables): the https URL of the deployed Colyseus server.
+          # Unset → the client shows its "not configured" state on Pages.
+          VITE_MP_ENDPOINT: ${{ vars.VITE_MP_ENDPOINT }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: client/dist

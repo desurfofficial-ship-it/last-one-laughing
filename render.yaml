@@ -1,0 +1,32 @@
+# Render Blueprint for the Last One Laughing multiplayer server.
+# Deploys via: Render dashboard -> New -> Blueprint -> pick this repo.
+# The service serves BOTH the WebSocket rooms and the built client at the
+# same origin, so no extra CORS/client configuration is needed.
+#
+# Free-tier facts (render.com/docs/free, verified 2026-10):
+#   - Free web services spin down after 15 min idle; spin-up takes ~1 min.
+#     The client retries joins for ~1 min and shows "Waking the server...".
+#   - 750 free instance hours per workspace per month; 512 MB RAM.
+#   - Free tier includes managed TLS (https/wss) and custom domains.
+services:
+  - type: web
+    name: last-one-laughing
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build -w client
+    startCommand: npm run start -w server
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      # Keep the debug 'place' verb OFF in production (tests only).
+      - key: LOL_TEST
+        value: "0"
+      # Optional: comma-separated extra origins if the client is ALSO served
+      # from a different origin (e.g. GitHub Pages dev previews). Same-origin
+      # (this service serving the client build) needs no CORS.
+      - key: LOL_ALLOWED_ORIGIN
+        sync: false

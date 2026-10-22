@@ -22,7 +22,7 @@ import express from 'express';
 // NOTE: import from @colyseus/core, NOT the umbrella 'colyseus' package —
 // the umbrella re-exports @colyseus/tools, which loads dotenv + @pm2/io
 // (KeyMetrics instrumentation) at import time. We want neither.
-import { Server } from '@colyseus/core';
+import { Server, matchMaker } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { ArenaRoom, testFlags } from './ArenaRoom';
 
@@ -45,6 +45,35 @@ const gameServer = new Server({
   // The transport owns an Express-compatible app; this callback decorates it
   // (verified: ServerOptions.express in @colyseus/core 0.18).
   express: (app: express.Application) => {
+    // Health endpoint FIRST (before static + fallback): host health checks
+    // and uptime monitors hit this. Counts come from the in-process
+    // matchmaker, cached for 3 s so probes stay cheap.
+    let healthCache = { at: 0, rooms: 0, players: 0, matches: 0 };
+    app.get('/health', async (_req, res) => {
+      const now = Date.now();
+      if (now - healthCache.at > 3_000) {
+        try {
+          const rooms = await matchMaker.query({});
+          healthCache = {
+            at: now,
+            rooms: rooms.length,
+            players: rooms.reduce((n, r) => n + (r.clients ?? 0), 0),
+            matches: rooms.filter((r) => r.locked).length,
+          };
+        } catch {
+          /* keep the last snapshot */
+        }
+      }
+      res.json({
+        ok: true,
+        uptime_s: Math.round(process.uptime()),
+        rooms: healthCache.rooms,
+        players: healthCache.players,
+        matches: healthCache.matches,
+        node: process.version,
+      });
+    });
+
     // Dev CORS: allow the Vite dev server to call matchmake endpoints.
     // Browsers do not enforce CORS on the WebSocket upgrade itself; the
     // HTTP matchmaking calls are what need the headers.
@@ -103,3 +132,14 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     void gameServer.gracefullyShutdown(false).then(() => process.exit(0));
   });
 }
+
+// Crash visibility: hosts restart the process; logs must say why. Nothing
+// here logs secrets (there are none - no tokens, no IPs, no headers).
+process.on('uncaughtException', (err) => {
+  console.error('[lol] uncaughtException', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[lol] unhandledRejection', reason);
+  process.exit(1);
+});
