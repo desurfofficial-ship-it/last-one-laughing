@@ -209,6 +209,30 @@ export class MpSession {
       this.emit('server-error', e),
     );
     room.onStateChange(() => this.emit('state'));
+    // Reconnectable socket drops (page refresh, wifi blip): the SDK retries
+    // the SAME session transparently and signals the drop via onDrop -
+    // onLeave only fires when it gives up (verified in @colyseus/sdk 0.18
+    // Room.mjs). Surface the reconnecting state immediately and keep the
+    // room + state objects so the scene keeps rendering.
+    room.onDrop(() => {
+      this.reconnecting = true;
+      this.setStatus('reconnecting');
+      this.emit('left', { intentional: false });
+    });
+    room.onReconnect(() => {
+      this.reconnecting = false;
+      // The SDK ROTATES the reconnection token on every transparent
+      // reconnect (verified: Room.mjs sets room.reconnectionToken on the
+      // success message). Persist the fresh one or a page reload after a
+      // transparent reconnect would fail recovery and take a second seat.
+      try {
+        sessionStorage.setItem(TOKEN_KEY, room.reconnectionToken);
+      } catch {
+        /* private mode */
+      }
+      this.setStatus('lobby');
+      this.emit('reconnected', {});
+    });
     room.onLeave((code) => this.handleLeave(code));
   }
 
@@ -223,29 +247,19 @@ export class MpSession {
     }
 
     if (!this.reconnecting) {
-      // First unexpected drop: @colyseus/sdk auto-reconnection is ALREADY
-      // retrying the same session transparently (same sessionId, so the
-      // server never releases the seat). Keep the room + state objects so
-      // the scene keeps rendering, and resume when it lands.
-      this.reconnecting = true;
+      // Non-reconnectable close (no onDrop fired): the SDK is NOT retrying.
+      // Surface the state and go straight to the token fallback.
       this.setStatus('reconnecting');
       this.emit('left', { intentional: false, code });
-      this.room?.onReconnect(() => {
-        this.reconnecting = false;
-        this.setStatus('lobby');
-        this.emit('reconnected', {});
-      });
-      return;
     }
 
-    // The SDK gave up (its retries exhausted). Fall back to the stored
-    // reconnection token while the server still holds the seat (90 s).
+    // The SDK gave up (retries exhausted) or the close was not
+    // reconnectable. Fall back to the stored reconnection token while the
+    // server still holds the seat (90 s).
     this.reconnecting = false;
     this.room = null;
     this.myPid = 0;
     const token = this.readToken();
-    this.setStatus('reconnecting');
-    this.emit('left', { intentional: false, code });
     if (!token) {
       this.finishReconnectFailure('You were disconnected.');
       return;
@@ -264,7 +278,13 @@ export class MpSession {
         try {
           await this.reconnectToken(token);
           return; // 'entered' flow re-bound everything
-        } catch {
+        } catch (err) {
+          // Seat already released server-side: retrying cannot help.
+          const msg = String((err as any)?.message ?? err ?? '');
+          if (/not found|expired|failed to reconnect|no more retries/i.test(msg)) {
+            if (!cancelled) this.finishReconnectFailure('Your seat expired - join again.');
+            return;
+          }
           await new Promise((r) => setTimeout(r, 1500));
         }
       }
@@ -331,7 +351,7 @@ export class MpSession {
 function explainJoinError(err: any): string {
   const msg = String(err?.message ?? err ?? '');
   if (/mp_not_configured/i.test(msg)) return 'Multiplayer is not configured for this build.';
-  if (/room not found|invalid room/i.test(msg)) return 'No room with that code.';
+  if (/not found|invalid room|does not exist/i.test(msg)) return 'No room with that code.';
   if (/locked|full/i.test(msg)) return 'That room is full or mid-match - try again soon.';
   if (/failed to reconnect|expired/i.test(msg)) return 'Your seat expired - join again.';
   if (/network|fetch|WebSocket/i.test(msg)) return 'Could not reach the multiplayer server.';

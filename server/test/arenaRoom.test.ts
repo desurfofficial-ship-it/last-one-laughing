@@ -340,3 +340,52 @@ describe('ArenaRoom (Colyseus 0.18)', () => {
 function sendPlace(room: SdkRoom, id: number, x: number, y: number, vx = 0, vy = 0): void {
   room.send('debug', { cmd: 'place', id, x, y, vx, vy });
 }
+
+describe('ArenaRoom seat release mid-match (no ghost fighters)', () => {
+  let srv: TestServer;
+  let port: number;
+
+  beforeAll(async () => {
+    srv = await startTestServer();
+    port = srv.port;
+  });
+
+  afterAll(async () => {
+    await srv.close();
+  });
+
+  it('a voluntary leave mid-match force-outs the fighter and ends the round', async () => {
+    const { a, b } = await startMatch(port);
+
+    // Ada leaves mid-match: her fighter must go through the fall path and
+    // the round must end with Basil as the winner (no eternal ghost stall).
+    // The fall event arrives on the REMAINING client's wire (Ada is gone).
+    await a.room.leave();
+    await waitFor(() => b.events.some((e) => e.t === 'fall' && (e as any).id === 1), 'fall event for leaver');
+    await waitFor(() => b.room.state.phase === 'over', 'over phase', 9_000);
+    const end = b.events.find((e) => e.t === 'end') as any;
+    expect(end).toBeTruthy();
+    expect(end.winnerId).toBe(2); // Basil is the last one standing
+    // Authoritative check from the remaining client: Ada's seat is released.
+    expect(b.room.state.players.has('1')).toBe(false);
+
+    await waitFor(() => b.room.state.phase === 'lobby', 'lobby return', 6_000);
+    b.room.leave().catch(() => {});
+  });
+
+  it('a leave during countdown with too few players aborts back to the lobby', async () => {
+    const a = await join(port, { name: 'Ada' });
+    const b = await join(port, { code: a.welcome.code, name: 'Basil' });
+    a.room.send('ready', true);
+    await sleep(120);
+    b.room.send('ready', true);
+    await sleep(120);
+    a.room.send('start');
+    await waitFor(() => a.room.state.phase === 'countdown', 'countdown', 9_000);
+
+    await b.room.leave();
+    await waitFor(() => a.room.state.phase === 'lobby', 'match aborted to lobby', 9_000);
+    expect(a.room.state.players.has(String(b.welcome.pid))).toBe(false);
+    a.room.leave().catch(() => {});
+  });
+});

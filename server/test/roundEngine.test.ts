@@ -271,3 +271,37 @@ describe('RoundEngine determinism', () => {
     expect(e2.roundTime).toBeCloseTo(e1.roundTime, 10);
   });
 });
+
+describe('RoundEngine.forceOut (seat released mid-match)', () => {
+  it('eliminates via the normal fall path: fall event, no KO credit, round ends', () => {
+    const e = makeEngine(7);
+    run(e, 4); // countdown(3s) + 1s of playing
+    expect(e.phase).toBe('playing');
+    e.drainEvents();
+
+    e.forceOut(2);
+    const events = e.drainEvents();
+    const fall = events.find((x) => x.t === 'fall');
+    expect(fall).toEqual({ t: 'fall', id: 2, byId: null });
+
+    runUntil(e, 5, () => e.isOver);
+    expect(e.isOver).toBe(true);
+    expect(e.winnerId).toBe(1); // the remaining fighter wins
+    expect(e.fighters[0].kos).toBe(0); // leaving is not a kill
+    expect(e.fighters[0].state).toBe('active');
+  });
+
+  it('is a no-op outside playing and for unknown/already-out ids', () => {
+    const e = makeEngine(7);
+    e.forceOut(2); // countdown
+    expect(e.drainEvents().filter((x) => x.t === 'fall')).toHaveLength(0);
+    expect(e.fighters[1].state).toBe('active');
+
+    run(e, 4); // playing
+    e.forceOut(99);
+    e.forceOut(2);
+    e.forceOut(2); // already falling
+    const falls = e.drainEvents().filter((x) => x.t === 'fall');
+    expect(falls).toHaveLength(1);
+  });
+});

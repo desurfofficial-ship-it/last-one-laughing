@@ -176,6 +176,21 @@ export class RoundEngine {
     return e;
   }
 
+  /**
+   * Server authority: remove a fighter whose seat was released mid-match
+   * (voluntary leave or reconnection-grace expiry). Goes through the normal
+   * fall path so eliminations, KO attribution (none here - leaving is not a
+   * kill) and the end-of-round check stay consistent. No-op outside playing.
+   */
+  forceOut(id: number): void {
+    if (this.phase !== 'playing') return;
+    const f = this.fighters.find((x) => x.id === id);
+    if (!f || f.state !== 'active') return;
+    f.state = 'falling';
+    f.lastHitById = null;
+    this.handleFallStart(f);
+  }
+
   update(dt: number): void {
     this.clock += dt;
     // Falling fighters finish their fall animation in ANY phase (the client's

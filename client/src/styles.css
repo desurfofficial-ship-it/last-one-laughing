@@ -552,3 +552,9 @@ body[data-mode='mp'] #btn-restart-2 {
 body[data-mode='mp'] #start-overlay {
   display: none;
 }
+
+/* An empty error/status pill must never occupy space (or cover inputs). */
+.mp-error:empty,
+.mp-status:empty {
+  display: none;
+}

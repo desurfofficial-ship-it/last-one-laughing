@@ -106,13 +106,21 @@ export class MpUI {
       mpSession.on('state', () => this.renderThrottled()),
       mpSession.on('entered', (p: { pid: number; code: string }) => {
         this.waking = false;
+        this.reconnectBanner.classList.add('hidden');
         this.myPid = p.pid;
-        this.openPanel(); // also covers silent rejoins after a page reload
+        // Opening the panel over a LIVE match would block play (and park
+        // the buttons under the joystick zone) - stay out of the way; the
+        // phase handler reopens the panel when the round ends.
+        const phase = document.body.dataset.phase;
+        if (!phase || phase === 'idle' || phase === 'lobby') this.openPanel();
+        else this.render();
       }),
       mpSession.on('error', (msg: string) => {
         this.waking = false;
+        this.myPid = 0; // terminal session failure: the seat is gone
         this.errorLine.textContent = msg;
         this.errorLine.classList.remove('hidden');
+        this.reconnectBanner.classList.add('hidden');
         // Connection losses can happen while the panel is hidden (mid-match);
         // surface the failure instead of leaving a dead screen.
         if (!mpSession.connected) this.openPanel();
@@ -132,8 +140,16 @@ export class MpUI {
         if (p.intentional) {
           this.myPid = 0;
           this.waking = false;
+          this.reconnectBanner.classList.add('hidden');
           this.render();
+        } else {
+          // Seat is held server-side (~90 s): show the reconnecting state
+          // even mid-match, when the lobby panel itself is hidden.
+          this.reconnectBanner.classList.remove('hidden');
         }
+      }),
+      mpSession.on('reconnected', () => {
+        this.reconnectBanner.classList.add('hidden');
       }),
     );
 
@@ -238,6 +254,9 @@ export class MpUI {
 
   private openPanel(): void {
     this.panel.classList.remove('hidden');
+    // A freshly opened lobby never shows yesterday's error.
+    this.errorLine.textContent = '';
+    this.errorLine.classList.add('hidden');
     this.render();
   }
 
@@ -256,10 +275,13 @@ export class MpUI {
   // ---------------------------------------------------------------- render
 
   private render(): void {
-    const connected = mpSession.connected;
-    document.body.dataset.mode = connected ? 'mp' : 'solo';
+    // 'mp' stays active while a seat is held (reconnecting) so mid-match UI
+    // (touch controls, pause guard) keeps multiplayer semantics.
+    const mpActive = mpSession.connected || this.myPid !== 0;
+    document.body.dataset.mode = mpActive ? 'mp' : 'solo';
     if (this.panel.classList.contains('hidden')) return;
 
+    const connected = mpSession.connected;
     if (!connected) {
       this.renderLobbyForm();
       return;

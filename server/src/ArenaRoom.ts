@@ -164,6 +164,7 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
       this.pidBySession.delete(client.sessionId);
       this.state.players.delete(String(pid));
       this.reassignHost();
+      this.onSeatReleased(pid);
       this.maybeAbandonMatch();
       console.log(`[arena ${this.roomId}] - player ${pid} left (code ${code}); seat released`);
       return;
@@ -186,6 +187,7 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
       this.pidBySession.delete(client.sessionId);
       this.state.players.delete(String(pid));
       this.reassignHost();
+      this.onSeatReleased(pid);
       this.maybeAbandonMatch();
       console.log(`[arena ${this.roomId}] player ${pid} seat released`);
     }
@@ -421,6 +423,26 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
       this.state.hostPid = alive[0]?.pid ?? 0;
     }
     this.refreshRosterFlags();
+  }
+
+  /**
+   * A seat was released while a round exists: keep the match honest.
+   * The released fighter must not linger as a ghost that can never be
+   * eliminated (it would stall the round forever). Countdown aborts the
+   * match outright when too few fighters remain; playing force-outs the
+   * fighter through the normal fall path; 'over' needs nothing.
+   */
+  private onSeatReleased(pid: number): void {
+    const e = this.engine;
+    if (!e) return;
+    if (e.phase === 'countdown') {
+      const present = [...this.state.players.values()].filter((p) => p.present).length;
+      if (present < MIN_PLAYERS) {
+        this.backToLobby();
+        return;
+      }
+    }
+    e.forceOut(pid);
   }
 
   /**
