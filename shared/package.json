@@ -3,5 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Engine-agnostic simulation shared by the Phaser client and the authoritative Node server (no phaser, no node, no DOM imports)."
+  "description": "Engine-agnostic simulation shared by the Phaser client and the authoritative Node server (no phaser, no node, no DOM imports).",
+  "dependencies": {
+    "@colyseus/schema": "^5.0.42"
+  }
 }
