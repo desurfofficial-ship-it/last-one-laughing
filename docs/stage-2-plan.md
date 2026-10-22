@@ -1,11 +1,28 @@
 # Stage 2 Implementation Plan — Server-Authoritative Online Multiplayer
 
-Status: PLAN ONLY (approved-by-audit, not yet implemented). Written after a full
+Status: SHIPPED (superseded transport: Colyseus 0.18). Written after a full
 read of the client source at commit `9262a2f` (= `230c768` + the remote
 `fix: requestDash return contract + distinct bot personalities` commit, which
 landed during this audit and is folded into the findings below). Verified
-findings vs assumptions are labeled throughout. Nothing in this document
-changes gameplay code.
+findings vs assumptions are labeled throughout.
+
+> **FINAL IMPLEMENTATION STATUS:** Stage 2 is COMPLETE. The plan's
+> architecture (shared RoundEngine, 30 Hz authoritative tick, 20 Hz state
+> updates, 6-char private codes, seat-held reconnection, two-client proof)
+> shipped exactly as designed — with ONE planned substitution: the raw `ws`
+> server proposed below was replaced by **Colyseus 0.18** (`@colyseus/core`
+> + `@colyseus/schema` 5 + `@colyseus/sdk`) per the follow-up brief.
+> `server/src/{rooms,match,app}.ts` became `server/src/ArenaRoom.ts` +
+> `index.ts`; snapshot JSON became schema delta patches (`patchRate = 50`);
+> the wire protocol shrank to the `MatchEvent` vocabulary
+> (`shared/src/net/protocol.ts`) plus the schema in
+> `shared/src/state/schema.ts`. Steps 1-2 (workspaces/shared extraction,
+> RoundEngine + unit tests) shipped verbatim. API verification for the
+> installed SDK versions lives in docs/colyseus-api-verification.md; the
+> automated two-client proof lives in server/test/arenaRoom.test.ts, and
+> the flow was additionally verified with two real browser sessions
+> (join by code/link, ready→start, live match, network-drop reconnection,
+> lobby return).
 
 > **IMPLEMENTATION STATUS (updated after sequence steps 1-3):**
 > Steps 1-3 are DONE and merged into `main`: npm workspaces + `shared/`
