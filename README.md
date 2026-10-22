@@ -157,8 +157,8 @@ sudden death, colors, names) lives in
 
 ## Known limitations (stage 1)
 
-- Bots have one implicit difficulty (personality quirks only); no difficulty
-  selector.
+- Bots have distinct personalities (Rex aggressive, Momo balanced, Bit
+  opportunistic) but only one implicit difficulty; no difficulty selector.
 - Sounds are synthesized (no audio toggle - use the device volume; iOS may
   mute WebAudio when the ringer switch is off).
 - Touch controls are not remappable; the floating joystick spawns wherever

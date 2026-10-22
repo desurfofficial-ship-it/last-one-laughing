@@ -5,6 +5,11 @@
  * Behavior: hunt the nearest (slightly randomized) opponent, lead the target,
  * blend a strong inward pull when close to the edge, add steering noise so
  * paths look organic, and dash opportunistically near the rim.
+ *
+ * Distinct personalities (by name):
+ * - Rex: aggressive brawler (high aggression, high dash skill)
+ * - Momo: balanced / cautious (medium aggression, solid edge awareness)
+ * - Bit: opportunistic / higher variance (lower base aggression, high dash skill)
  */
 
 import type { Fighter } from './Fighter';
@@ -34,8 +39,24 @@ export class BotController {
     private me: Fighter,
     private fighters: Fighter[],
   ) {
-    this.aggression = 0.65 + Math.random() * 0.35;
-    this.dashSkill = 0.35 + Math.random() * 0.55;
+    // Distinct personality baselines with a little per-instance variance.
+    switch (me.def.name) {
+      case 'Rex': // aggressive brawler
+        this.aggression = 0.88 + Math.random() * 0.12;
+        this.dashSkill = 0.70 + Math.random() * 0.25;
+        break;
+      case 'Momo': // balanced / cautious
+        this.aggression = 0.60 + Math.random() * 0.20;
+        this.dashSkill = 0.45 + Math.random() * 0.25;
+        break;
+      case 'Bit': // opportunistic, higher variance
+        this.aggression = 0.50 + Math.random() * 0.30;
+        this.dashSkill = 0.65 + Math.random() * 0.30;
+        break;
+      default:
+        this.aggression = 0.65 + Math.random() * 0.35;
+        this.dashSkill = 0.35 + Math.random() * 0.55;
+    }
   }
 
   update(dt: number, ctx: BotCtx): void {
