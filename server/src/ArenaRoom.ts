@@ -215,13 +215,19 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
   /** Returns an error code on failure, null on success. */
   private startMatch(): Extract<ErrorMsg['code'], 'match_running' | 'need_players' | 'need_ready'> | null {
     if (this.engine) return 'match_running';
-    const seated = [...this.state.players.values()].sort((a, b) => a.pid - b.pid);
-    const present = seated.filter((p) => p.present);
+    // Only present players enter the match. Absent seats (reconnection grace)
+    // must not create uncontrollable ghost fighters, and fighter ids MUST equal
+    // the stable player pid so inputs / schema writes / forceOut stay aligned
+    // even when lobby leave+rejoin left gaps in the pid sequence.
+    const present = [...this.state.players.values()]
+      .filter((p) => p.present)
+      .sort((a, b) => a.pid - b.pid);
     if (present.length < MIN_PLAYERS) return 'need_players';
     if (!present.every((p) => p.ready)) return 'need_ready';
 
     const seed = Math.floor(Math.random() * 0x7fffffff);
-    const roster: RosterEntry[] = seated.map((p) => ({
+    const roster: RosterEntry[] = present.map((p) => ({
+      id: p.pid,
       name: p.name,
       css: p.css,
       radius: ROSTER_RADII[(p.pid - 1) % ROSTER_RADII.length],

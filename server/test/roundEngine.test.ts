@@ -305,3 +305,41 @@ describe('RoundEngine.forceOut (seat released mid-match)', () => {
     expect(falls).toHaveLength(1);
   });
 });
+
+
+describe('RoundEngine explicit roster ids (pid gaps)', () => {
+  it('honours RosterEntry.id so non-contiguous pids stay addressable', () => {
+    // Simulates lobby churn: player 1 left, players 2 and 5 remain.
+    const e = new RoundEngine(
+      [
+        { id: 2, name: 'Basil', css: '#ff5d5d', radius: 40 },
+        { id: 5, name: 'Cleo', css: '#3ddc97', radius: 38 },
+      ],
+      11,
+    );
+    expect(e.fighters.map((f) => f.id)).toEqual([2, 5]);
+
+    run(e, 4); // into playing
+    e.drainEvents();
+    e.forceOut(5);
+    const fall = e.drainEvents().find((x) => x.t === 'fall');
+    expect(fall).toEqual({ t: 'fall', id: 5, byId: null });
+
+    runUntil(e, 5, () => e.isOver);
+    expect(e.isOver).toBe(true);
+    expect(e.winnerId).toBe(2);
+  });
+
+  it('rejects duplicate explicit ids', () => {
+    expect(
+      () =>
+        new RoundEngine(
+          [
+            { id: 7, name: 'A', css: '#ffd23f', radius: 40 },
+            { id: 7, name: 'B', css: '#ff5d5d', radius: 40 },
+          ],
+          1,
+        ),
+    ).toThrow(/duplicate fighter id 7/);
+  });
+});
