@@ -7,37 +7,43 @@ everything is geometric shapes and synthesized sound.
 
 ![gameplay](docs/screenshot-gameplay.png)
 
-## Status: stage 1 prototype
+## Status: stage 2 in progress
 
-- Local simulated opponents (3 bots with distinct personalities). No accounts,
-  database, payments, analytics, or networking.
-- Online multiplayer is intentionally deferred to stage 2 (see
-  [Roadmap](#roadmap)); `server/`, `shared/` and `multiplayer/` folders will
-  be added then, without restructuring the client.
+- Solo mode (3 bots with distinct personalities) is complete and unchanged.
+- Stage 2 online multiplayer is under way: the shared authoritative
+  simulation and the Node server are implemented and tested (see
+  [docs/stage-2-plan.md](docs/stage-2-plan.md)); the client's multiplayer
+  UI/connection layer comes next. No accounts, database, payments,
+  analytics.
 
 ## Quick start
 
-Prerequisites: **Node.js >= 20** and npm.
+Prerequisites: **Node.js >= 20** and npm. The repo is an npm workspace with
+three packages: `client/` (Phaser game), `shared/` (engine-agnostic
+simulation) and `server/` (authoritative multiplayer, stage 2 in progress).
 
 ```bash
 # 1. Clone
 git clone https://github.com/<owner>/last-one-laughing.git
-cd last-one-laughing/client
+cd last-one-laughing
 
-# 2. Install dependencies
+# 2. Install all workspaces
 npm install
 
-# 3. Run the dev server (prints a local URL and a LAN URL for phone testing)
+# 3. Run client + server together (dev)
 npm run dev
+#   - web client: http://localhost:5173
+#   - game server: ws://localhost:8787/ws
 
-# 4. Production build (runs TypeScript typecheck first, then bundles)
+# 4. Production client build (typecheck + bundle)
 npm run build
 
-# 5. Serve the production build locally
-npm run preview
-```
+# 5. Simulation tests (RoundEngine unit + two-client integration)
+npm test
 
-Typecheck only: `npm run typecheck`.
+# 6. Typecheck everything
+npm run typecheck
+```
 
 ### Test on a real phone
 
@@ -83,35 +89,44 @@ No gameplay action requires hovering or a keyboard.
 
 ![slippery warning](docs/screenshot-slippery.png)
 
-## Project structure (stage 1)
+## Project structure
 
 ```
 last-one-laughing/
-├── client/                  # the entire game (Vite + TypeScript)
+├── client/                  # the Phaser game (Vite + TypeScript)
 │   ├── index.html           # canvas host + DOM menus/controls
 │   └── src/
 │       ├── main.ts          # bootstrap: Phaser game + DOM wiring
 │       ├── styles.css       # menus, overlays, touch controls
 │       ├── game/            # gameplay layer (no DOM access)
-│       │   ├── constants.ts # all tuning knobs in one place
-│       │   ├── types.ts     # Body/Phase/HitEvent/Obstacle contracts
-│       │   ├── EventBus.ts  # game <-> DOM bridge (framework-free)
-│       │   ├── sfx.ts       # synthesized WebAudio effects
-│       │   ├── motion.ts    # reduced-motion + touch detection
-│       │   ├── scenes/      # GameScene: round flow, HUD, feedback
+│       │   ├── scenes/      # GameScene: solo round flow, HUD, feedback
 │       │   ├── entities/    # Fighter (view+state), BotController (AI)
-│       │   ├── physics/     # ArenaPhysics: impulses, knockback, obstacles
-│       │   └── modifiers/   # SlipperyFloor + ModifierDirector (bumpers/shrink)
+│       │   └── ...          # constants/types/physics/modifiers are shims → shared/
 │       ├── input/           # keyboard + touch joystick + dash button
 │       └── ui/              # start/pause/result overlays + out-card (DOM)
-├── docs/                    # screenshots
-└── .github/workflows/       # GitHub Pages deploy
+├── shared/                  # engine-agnostic sim (no phaser/node/DOM)
+│   └── src/
+│       ├── constants.ts     # all tuning knobs (single source of truth)
+│       ├── types.ts         # Body/Phase/HitEvent/Obstacle contracts
+│       ├── physics/         # ArenaPhysics: impulses, knockback, obstacles
+│       ├── modifiers/       # SlipperyFloor + ModifierDirector
+│       ├── sim/             # Dash.ts + RoundEngine.ts (authoritative round)
+│       ├── net/protocol.ts  # wire messages (JSON over WebSocket)
+│       └── util/rng.ts      # mulberry32 seeded RNG
+├── server/                  # authoritative multiplayer (stage 2)
+│   ├── src/
+│   │   ├── index.ts         # entry (PORT env, default 8787)
+│   │   ├── app.ts           # http + /ws + static client hosting
+│   │   ├── rooms.ts         # private rooms, tokens, rejoin, capacity
+│   │   └── match.ts         # 30 Hz sim tick + 20 Hz snapshots
+│   └── test/                # RoundEngine unit + two-client integration
+├── docs/                    # screenshots + stage-2-plan.md
+└── .github/workflows/       # GitHub Pages deploy (client)
 ```
 
-Planned stage-2 additions: `server/` (authoritative Node simulation),
-`shared/` (constants + protocol shared by client/server), and
-`client/src/multiplayer/` (connection + room client). The physics and
-modifier modules already avoid Phaser imports, so the server can reuse them.
+Stage 2 status: shared simulation + authoritative server + tests are in;
+the client's multiplayer UI/connection layer is the next step (see
+[docs/stage-2-plan.md](docs/stage-2-plan.md)). Solo mode is unchanged.
 
 ## Architecture notes
 
@@ -134,9 +149,11 @@ modifier modules already avoid Phaser imports, so the server can reuse them.
 
 ## Build & deploy (GitHub Pages)
 
-A workflow at `.github/workflows/deploy.yml` builds `client/dist` and deploys
-it to GitHub Pages on every push to `main`. One-time setup if enabling
-manually: **Settings -> Pages -> Source: GitHub Actions**.
+A workflow at `.github/workflows/deploy.yml` installs the workspace, builds
+`client/dist` (`npm run build -w client`) and deploys it to GitHub Pages on
+every push to `main`. One-time setup if enabling manually: **Settings ->
+Pages -> Source: GitHub Actions**. The multiplayer server is deployed
+separately (any Node host; `npm run start -w server`).
 
 The Vite `base` is `./`, so the bundle also works from any subdirectory or
 static host without rewrites.

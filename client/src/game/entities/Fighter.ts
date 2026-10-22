@@ -5,9 +5,10 @@
  */
 
 import Phaser from 'phaser';
-import { COMBAT, DASH, FALL_ANIM_MS } from '../constants';
+import { COMBAT, FALL_ANIM_MS } from '../constants';
 import type { FighterDef } from '../constants';
 import { emptyInput } from '../physics/ArenaPhysics';
+import { tryDash, updateFacing } from '../../../../shared/src/sim/Dash';
 import type { Body, FighterState, InputState } from '../types';
 
 export class Fighter implements Body {
@@ -106,26 +107,10 @@ export class Fighter implements Body {
     return this.def.isPlayer;
   }
 
-  /** Execute a dash if available (consumes any queued request). Returns true when it fires. */
+  /** Execute a dash if available (consumes any queued request). Returns true when it fires.
+   *  Math lives in shared/sim/Dash.ts so the authoritative server runs the same code. */
   requestDash(): boolean {
-    this.dashQueued = false;
-    if (this.state !== 'active' || this.dashCooldown > 0) return false;
-
-    let dx = this.input.moveX;
-    let dy = this.input.moveY;
-    const mag = Math.hypot(dx, dy);
-    if (mag < 0.15) {
-      dx = this.facing.x;
-      dy = this.facing.y;
-    } else {
-      dx /= mag;
-      dy /= mag;
-    }
-    this.vel.x += dx * DASH.speed;
-    this.vel.y += dy * DASH.speed;
-    this.dashTimer = DASH.duration;
-    this.dashCooldown = DASH.cooldown;
-    return true;
+    return tryDash(this);
   }
 
   syncVisual(dt: number): void {
@@ -143,15 +128,7 @@ export class Fighter implements Body {
     }
     this.container.setPosition(this.pos.x + this.knockX, this.pos.y + this.knockY);
 
-    const speed = Math.hypot(this.vel.x, this.vel.y);
-    if (speed > 20) {
-      const k = Math.min(1, dt * 8);
-      this.facing.x += (this.vel.x / speed - this.facing.x) * k;
-      this.facing.y += (this.vel.y / speed - this.facing.y) * k;
-      const fl = Math.hypot(this.facing.x, this.facing.y) || 1;
-      this.facing.x /= fl;
-      this.facing.y /= fl;
-    }
+    updateFacing(this, dt);
     const fx = this.facing.x;
     const fy = this.facing.y;
     const px = -fy;

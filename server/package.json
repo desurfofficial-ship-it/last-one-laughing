@@ -1,0 +1,26 @@
+{
+  "name": "@lol/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Authoritative multiplayer server for Last One Laughing (rooms, tokens, 30 Hz sim via the shared RoundEngine, 20 Hz snapshots).",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3",
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

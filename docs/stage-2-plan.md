@@ -7,6 +7,25 @@ landed during this audit and is folded into the findings below). Verified
 findings vs assumptions are labeled throughout. Nothing in this document
 changes gameplay code.
 
+> **IMPLEMENTATION STATUS (updated after sequence steps 1-3):**
+> Steps 1-3 are DONE and merged into `main`: npm workspaces + `shared/`
+> extraction with client re-export shims, `shared/sim/Dash.ts` +
+> `shared/sim/RoundEngine.ts` (with unit tests), and the authoritative
+> server (`server/src/{app,rooms,match,index}.ts`) with the two-client
+> integration test — 15/15 vitest tests green, client typecheck/build green,
+> solo smoke-tested headlessly (full round + restart).
+> **Regression found & fixed during extraction:** the remote `9262a2f` change
+> made `Fighter.requestDash` fire UNCONDITIONALLY (it consumed `dashQueued`
+> without checking it) while the call site stopped gating on the queue —
+> every fighter auto-dashed whenever its cooldown expired, on the live
+> Pages build too. The shared `tryDash` restores the queue gate while
+> keeping the fixed return semantics (true iff a dash fired). Step 4
+> (client multiplayer UI/NetClient) and steps 5-6 are still open.
+> Protocol deltas vs §4 below: `host`/`join` carry an optional `name`,
+> `NetPlayerInfo` gained `present: boolean`, `start` has no `you` field
+> (clients use `joined.you`), and the debug verb (`place`) is gated by
+> `LOL_TEST=1`.
+
 ## 0. Audit summary (verified unless noted)
 
 ### Module inventory and server-shareability

@@ -23,11 +23,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: client/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
-        working-directory: client
-      - run: npm run build
-        working-directory: client
+      - run: npm run build -w client
       - uses: actions/upload-pages-artifact@v3
         with:
           path: client/dist
