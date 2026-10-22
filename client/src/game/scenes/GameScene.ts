@@ -504,7 +504,7 @@ export class GameScene extends Phaser.Scene {
     for (const bot of this.bots) bot.update(dt, ctx);
 
     for (const f of this.fighters) {
-      if (f.dashQueued && f.requestDash()) {
+      if (f.requestDash()) {
         if (f === this.player) {
           sfx.dash();
           vibrate(10);

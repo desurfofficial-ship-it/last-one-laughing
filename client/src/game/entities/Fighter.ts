@@ -106,9 +106,8 @@ export class Fighter implements Body {
     return this.def.isPlayer;
   }
 
-  /** Execute a queued dash if it is available. Returns true when it fires. */
+  /** Execute a dash if available (consumes any queued request). Returns true when it fires. */
   requestDash(): boolean {
-    const queued = this.dashQueued;
     this.dashQueued = false;
     if (this.state !== 'active' || this.dashCooldown > 0) return false;
 
@@ -126,7 +125,7 @@ export class Fighter implements Body {
     this.vel.y += dy * DASH.speed;
     this.dashTimer = DASH.duration;
     this.dashCooldown = DASH.cooldown;
-    return queued;
+    return true;
   }
 
   syncVisual(dt: number): void {
