@@ -202,13 +202,6 @@ body[data-player-out='1'] #dash-button {
   color: var(--danger);
 }
 
-#out-card .out-sub {
-  margin: 0;
-  font-size: 13.5px;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
 /* ---------- DOM menus ---------- */
 #ui-layer {
   position: fixed;
@@ -279,33 +272,6 @@ h2 {
 .dots span:nth-child(4) {
   background: #4da3ff;
   animation-delay: 0.45s;
-}
-
-.tagline {
-  color: var(--muted);
-  margin: 0;
-  font-size: 16px;
-}
-
-.howto {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.8;
-  max-width: 440px;
-  margin: 4px 0 0;
-}
-
-.howto strong {
-  color: var(--text);
-}
-
-kbd {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
-  padding: 1px 7px;
-  font: inherit;
-  font-size: 12px;
 }
 
 .btn {
@@ -461,13 +427,6 @@ kbd {
 
 #mp-lobby input:focus {
   border-color: #ffd23f;
-}
-
-.mp-or {
-  text-align: center;
-  color: #aab2d5;
-  font-size: 14px;
-  margin: 6px 0;
 }
 
 .mp-join-row {

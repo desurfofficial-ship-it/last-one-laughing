@@ -146,7 +146,5 @@ export const FIGHTER_DEFS: FighterDef[] = [
 /** Spawn angles (degrees) around the arena center, one per fighter. */
 export const SPAWN_ANGLES_DEG = [135, 225, 315, 45];
 
-export const LOL_TEXTS = ['HA!', 'HA HA!', 'LOL!', 'BYE!', 'GOT EM!'];
-
 /** localStorage flag so the first-round tutorial hints show exactly once. */
 export const TUTORIAL_KEY = 'lol_tut_v1';

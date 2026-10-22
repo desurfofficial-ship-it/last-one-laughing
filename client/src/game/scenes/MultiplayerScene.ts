@@ -14,7 +14,6 @@ import {
   ARENA_RADIUS,
   COMBAT,
   DASH,
-  LOL_TEXTS,
   PALETTE,
 } from '../constants';
 import { gameBus } from '../EventBus';
@@ -639,10 +638,9 @@ export class MultiplayerScene extends Phaser.Scene {
         );
         gameBus.emit('player-out', {});
       } else if (killerId === mpSession.myPid) {
-        koText(this, inX, inY, `YOU GOT ${row.name.toUpperCase()}!`, '#ffd23f', `${row.name} is out!`);
+        koText(this, inX, inY, `YOU GOT ${row.name.toUpperCase()}!`, '#ffd23f', null);
       } else {
-        const cheer = LOL_TEXTS[Math.floor(Math.random() * LOL_TEXTS.length)];
-        koText(this, inX, inY, cheer, '#ffffff', `${row.name} is out!`);
+        koText(this, inX, inY, `${row.name} is out!`, '#ffffff', null);
       }
     });
     sfx.fall();
@@ -675,18 +673,8 @@ export class MultiplayerScene extends Phaser.Scene {
       ease: 'Back.easeOut',
     });
 
-    const sub = this.hud.winnerSub;
-    sub
-      .setVisible(true)
-      .setAlpha(0)
-      .setText(isDraw ? "Nobody's laughing..." : iWon ? 'Last one laughing.' : 'Better luck next round.');
-    this.tweens.add({
-      targets: sub,
-      alpha: { from: 0, to: 1 },
-      duration: 380,
-      delay: 220,
-      ease: 'Quad.easeOut',
-    });
+    // Sub-line is cut (the big text says it all); kept only for reset paths.
+    this.hud.winnerSub.setVisible(false).setText('');
 
     if (winner && winnerRow) {
       winner.victory();

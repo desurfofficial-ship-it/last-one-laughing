@@ -12,7 +12,6 @@ import {
   COMBAT,
   DASH,
   FIGHTER_DEFS,
-  LOL_TEXTS,
   MODS,
   PALETTE,
   ROUND,
@@ -596,10 +595,9 @@ export class GameScene extends Phaser.Scene {
       if (f.isPlayer) {
         this.koText(inX, inY, "YOU'RE OUT!", '#ff5d5d', outBy ? `Knocked out by ${outBy.def.name}` : null);
       } else if (outBy?.isPlayer) {
-        this.koText(inX, inY, `YOU GOT ${f.def.name.toUpperCase()}!`, '#ffd23f', `${f.def.name} is out!`);
+        this.koText(inX, inY, `YOU GOT ${f.def.name.toUpperCase()}!`, '#ffd23f', null);
       } else {
-        const cheer = LOL_TEXTS[Math.floor(Math.random() * LOL_TEXTS.length)];
-        this.koText(inX, inY, cheer, '#ffffff', `${f.def.name} is out!`);
+        this.koText(inX, inY, `${f.def.name} is out!`, '#ffffff', null);
       }
     });
     sfx.fall();
@@ -649,18 +647,8 @@ export class GameScene extends Phaser.Scene {
       ease: 'Back.easeOut',
     });
 
-    const sub = this.hud.winnerSub;
-    sub
-      .setVisible(true)
-      .setAlpha(0)
-      .setText(winner ? (winner.isPlayer ? 'Last one laughing.' : 'Better luck next round.') : "Nobody's laughing...");
-    this.tweens.add({
-      targets: sub,
-      alpha: { from: 0, to: 1 },
-      duration: 380,
-      delay: 220,
-      ease: 'Quad.easeOut',
-    });
+    // Sub-line is cut (the big text says it all); kept only for reset paths.
+    this.hud.winnerSub.setVisible(false).setText('');
 
     if (winner) {
       // Every winner celebrates now (previously only the player did).

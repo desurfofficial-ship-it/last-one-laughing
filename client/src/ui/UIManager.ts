@@ -164,11 +164,10 @@ export class UIManager {
       r.winnerName === 'Nobody' ? 'DRAW!' : r.playerWon ? 'YOU WIN!' : `${r.winnerName.toUpperCase()} WINS!`;
     this.resultTitle.textContent = title;
     this.resultTitle.style.color = r.playerWon ? '#ffd23f' : r.winnerCss;
-    this.resultSub.textContent = r.playerWon
-      ? 'Last one laughing.'
-      : r.playerOut
-        ? `You were knocked out by ${r.outBy ?? 'the arena'}.`
-        : 'So close - knock them all off next time.';
+    // Sub-line carries attribution only ("knocked out by X"); flavor text is cut.
+    const sub = r.playerWon ? '' : r.playerOut ? `Knocked out by ${r.outBy ?? 'the arena'}` : '';
+    this.resultSub.textContent = sub;
+    this.resultSub.classList.toggle('hidden', !sub);
 
     let best = readBest();
     if (r.playerWon) {
