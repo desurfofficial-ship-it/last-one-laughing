@@ -7,20 +7,24 @@ everything is geometric shapes and synthesized sound.
 
 ![gameplay](docs/screenshot-gameplay.png)
 
-## Status: stage 2 in progress
+## Status: online multiplayer (stage 2) implemented
 
-- Solo mode (3 bots with distinct personalities) is complete and unchanged.
-- Stage 2 online multiplayer is under way: the shared authoritative
-  simulation and the Node server are implemented and tested (see
-  [docs/stage-2-plan.md](docs/stage-2-plan.md)); the client's multiplayer
-  UI/connection layer comes next. No accounts, database, payments,
-  analytics.
+- **Solo mode** (3 bots with distinct personalities) is complete and
+  unchanged.
+- **Online multiplayer is live**: 2-8 players, private rooms with 6-char
+  codes + shareable links, ready-up lobby, server-authoritative matches
+  (Colyseus 0.18 + `@colyseus/schema` 5), reconnection support, and an
+  automated test suite including a two-client proof. See
+  [docs/stage-2-plan.md](docs/stage-2-plan.md) and
+  [docs/colyseus-api-verification.md](docs/colyseus-api-verification.md).
+- No accounts, database, payments, or analytics.
 
 ## Quick start
 
-Prerequisites: **Node.js >= 20** and npm. The repo is an npm workspace with
-three packages: `client/` (Phaser game), `shared/` (engine-agnostic
-simulation) and `server/` (authoritative multiplayer, stage 2 in progress).
+Prerequisites: **Node.js >= 22** (Colyseus 0.18 requires it) and npm. The
+repo is an npm workspace with three packages: `client/` (Phaser game),
+`shared/` (engine-agnostic simulation + net schema) and `server/`
+(Colyseus authoritative server).
 
 ```bash
 # 1. Clone
@@ -32,8 +36,8 @@ npm install
 
 # 3. Run client + server together (dev)
 npm run dev
-#   - web client: http://localhost:5173
-#   - game server: ws://localhost:8787/ws
+#   - web client: http://localhost:5173 (Play online -> create/join)
+#   - game server: http://localhost:8787 (also serves the built client)
 
 # 4. Production client build (typecheck + bundle)
 npm run build
@@ -44,6 +48,38 @@ npm test
 # 6. Typecheck everything
 npm run typecheck
 ```
+
+### Test multiplayer with two clients (exact steps)
+
+The automated proof lives in `server/test/arenaRoom.test.ts` (two real SDK
+clients over real WebSockets: join, capacity, round transitions, winner
+broadcast, token rejoin). To verify with two REAL browser sessions:
+
+```bash
+# 1. Build the client and start the game server (serves client + WS on :8787)
+npm run build -w client
+npm run start -w server
+
+# 2. Browser A: open http://localhost:8787/
+#    -> "Play online" -> enter name -> "Create private room"
+#    -> note the 6-char room code (e.g. H5VH93)
+
+# 3. Browser B (second window/another device on the LAN):
+#    open http://localhost:8787/?room=H5VH93   (or use "Copy invite link")
+#    -> enter a name -> Join
+
+# 4. Both: "Ready up"; the host's "Start match" enables -> click it.
+#    Both windows run the same server-owned round: countdown, bumpers,
+#    slippery floor, eliminations, winner, then back to the lobby.
+
+# 5. Reconnection check: hard-refresh one browser mid-match - it rejoins
+#    its seat automatically (sessionStorage token, 90 s server grace).
+```
+
+The repo's own verification (headless, two isolated browser sessions on
+localhost:8787) exercised exactly this flow, including a real network drop
+via browser offline emulation: the seat was held, the SDK auto-reconnected,
+and the match continued.
 
 ### Test on a real phone
 
@@ -96,14 +132,16 @@ last-one-laughing/
 ├── client/                  # the Phaser game (Vite + TypeScript)
 │   ├── index.html           # canvas host + DOM menus/controls
 │   └── src/
-│       ├── main.ts          # bootstrap: Phaser game + DOM wiring
-│       ├── styles.css       # menus, overlays, touch controls
+│       ├── main.ts          # bootstrap: Phaser game + DOM wiring + scene swap
+│       ├── styles.css       # menus, overlays, touch controls, MP lobby
 │       ├── game/            # gameplay layer (no DOM access)
-│       │   ├── scenes/      # GameScene: solo round flow, HUD, feedback
+│       │   ├── scenes/      # GameScene (solo) + MultiplayerScene (net render)
 │       │   ├── entities/    # Fighter (view+state), BotController (AI)
+│       │   ├── fx.ts        # impact/confetti/KO helpers (shared by MP scene)
 │       │   └── ...          # constants/types/physics/modifiers are shims → shared/
 │       ├── input/           # keyboard + touch joystick + dash button
-│       └── ui/              # start/pause/result overlays + out-card (DOM)
+│       ├── multiplayer/     # NetClient.ts: @colyseus/sdk session + reconnection
+│       └── ui/              # solo overlays + MpUI (online lobby, DOM)
 ├── shared/                  # engine-agnostic sim (no phaser/node/DOM)
 │   └── src/
 │       ├── constants.ts     # all tuning knobs (single source of truth)
@@ -111,22 +149,83 @@ last-one-laughing/
 │       ├── physics/         # ArenaPhysics: impulses, knockback, obstacles
 │       ├── modifiers/       # SlipperyFloor + ModifierDirector
 │       ├── sim/             # Dash.ts + RoundEngine.ts (authoritative round)
-│       ├── net/protocol.ts  # wire messages (JSON over WebSocket)
+│       ├── state/schema.ts  # Colyseus schema classes (GameState/PlayerState)
+│       ├── net/protocol.ts  # MatchEvent vocabulary + roster constants
 │       └── util/rng.ts      # mulberry32 seeded RNG
-├── server/                  # authoritative multiplayer (stage 2)
+├── server/                  # authoritative multiplayer (Colyseus 0.18)
 │   ├── src/
-│   │   ├── index.ts         # entry (PORT env, default 8787)
-│   │   ├── app.ts           # http + /ws + static client hosting
-│   │   ├── rooms.ts         # private rooms, tokens, rejoin, capacity
-│   │   └── match.ts         # 30 Hz sim tick + 20 Hz snapshots
+│   │   ├── index.ts         # entry: static client hosting + WS, env config
+│   │   └── ArenaRoom.ts     # room codes, ready lobby, 30 Hz sim, patches
 │   └── test/                # RoundEngine unit + two-client integration
-├── docs/                    # screenshots + stage-2-plan.md
-└── .github/workflows/       # GitHub Pages deploy (client)
+├── docs/                    # screenshots + stage-2-plan + api verification
+└── .github/workflows/       # GitHub Pages deploy (solo client)
 ```
 
-Stage 2 status: shared simulation + authoritative server + tests are in;
-the client's multiplayer UI/connection layer is the next step (see
-[docs/stage-2-plan.md](docs/stage-2-plan.md)). Solo mode is unchanged.
+Stage 2 status: shipped. Solo mode is unchanged.
+
+## Multiplayer architecture
+
+- **Authority:** the server runs the shared `RoundEngine` (the same
+  collision/dash/knockback/elimination/modifier code the solo game uses) on
+  a 30 Hz fixed timestep. Clients send only input intents (~30 Hz, move
+  vector + a one-shot dash request bit); the server clamps, validates and
+  rate-limits everything (`maxMessagesPerSecond` + per-message checks).
+  Winners, eliminations, KO attribution, timers and modifier windows are
+  exclusively server-side.
+- **Transport:** Colyseus 0.18 rooms. Continuous state (positions,
+  dash/cooldowns, arena radius, phase) flows through `@colyseus/schema` 5
+  delta patches at 20 Hz (`patchRate = 50`); one-shot effects (hits, falls,
+  countdown pops, banners) ride as `ev` messages carrying the shared
+  `MatchEvent` union.
+- **Rooms:** the 6-char private code IS the Colyseus `roomId` (officially
+  replaceable during `onCreate`). Join via `joinById(code)`; invite links
+  are `?room=CODE`. Rooms lock during matches (reconnections bypass the
+  lock via reserved seats).
+- **Reconnection:** a dropped socket holds the seat for 90 s
+  (`allowReconnection`); the absent fighter keeps simulating with zeroed
+  input (arena-consistent - they drift and get shoved off like anyone
+  else). The browser stores the reconnection token in sessionStorage and
+  recovers from page reloads; the SDK's built-in auto-reconnection covers
+  transient blips on the same page.
+- **Identity:** stable server-issued pids (1-8) keyed into the state map;
+  clients locate their own row via `player.sid === room.sessionId`.
+
+## Production deployment (multiplayer)
+
+One Node service serves both the WebSocket rooms and the static client
+build (same origin = no CORS, no separate CDN step):
+
+```bash
+npm ci
+npm run build -w client
+PORT=8787 NODE_ENV=production npm run start -w server   # tsx runtime
+```
+
+Deploy this repo to any Node 22+ host (Fly.io, Render, Railway, a VPS
+behind nginx). Host specifics:
+
+- **Fly.io:** `fly launch` with `[[http_service]] internal_port = 8787`,
+  or a 2-line Dockerfile (`FROM node:22-slim` + the three commands above).
+- **Render/Railway:** build command `npm ci && npm run build -w client`,
+  start command `npm run start -w server`; the platform injects `PORT`.
+- **Env vars** (all optional): `PORT` (default 8787), `NODE_ENV`
+  (`production` disables dev CORS), `LOL_CLIENT_DIST` (client build dir),
+  `LOL_ALLOWED_ORIGIN` (comma-separated origins for cross-origin clients,
+  e.g. a separate static host), `LOL_TEST=1` (enables test-only debug
+  verbs - never in production). No secrets are required: there are no
+  accounts or third-party services. Never put secrets in client code -
+  only `VITE_MP_ENDPOINT` (a public URL) is baked into the browser bundle.
+- **Scaling notes (v1):** rooms are in-memory and die with the process
+  (single-node design; no persistence by design). One 1-vCPU instance
+  comfortably hosts dozens of 8-player rooms at 30 Hz. For multi-instance
+  you would add the Colyseus Redis driver/presence - deliberately out of
+  scope for this slice.
+
+The GitHub Pages deploy (`.github/workflows/deploy.yml`) continues to
+publish the solo game. Pages is static-only, so online play from Pages
+requires setting `VITE_MP_ENDPOINT` at build time to a deployed game
+server URL; the simplest multiplayer deployment is the single Node
+service above.
 
 ## Architecture notes
 
@@ -166,13 +265,39 @@ sudden death, colors, names) lives in
 
 ## Roadmap
 
-1. **Stage 2 - online multiplayer:** authoritative server reusing
-   `ArenaPhysics`/`SlipperyFloor`, room management, WebSocket protocol,
-   lag-compensated input.
-2. Polish: bot difficulty levels, more arena modifiers, gamepad support,
-   sound toggle, PWA offline mode.
+1. ~~**Stage 2 - online multiplayer**~~ - shipped (Colyseus 0.18,
+   server-authoritative, 2-8 players, private rooms, reconnection).
+2. Polish: netcode upgrades (see limitations), bot difficulty levels, more
+   arena modifiers, gamepad support, sound toggle, PWA offline mode.
 
-## Known limitations (stage 1)
+## Known limitations (multiplayer netcode)
+
+Documented honestly, per the stage-2 brief:
+
+- **No client-side prediction.** Local input waits for the server: your own
+  fighter moves ~RTT/2 + 60-100 ms after you press. On localhost/LAN this
+  feels instant; over the internet it reads as slight floatiness. Colyseus
+  0.18 ships prediction primitives (`defineInput`, `setFixedTimestep`,
+  `Predict`) that this slice deliberately does not use yet - the shared
+  `RoundEngine` is deterministic, so a prediction/reconciliation layer can
+  be added without changing the server's authority model.
+- **Interpolation, not extrapolation.** Remote fighters ease toward the
+  latest server snapshot (~90 ms smoothing, snap beyond 260 px). Under
+  packet loss they briefly freeze rather than dead-reckon.
+- **Reconnection window.** A dropped player's seat (and fighter) is held
+  for 90 s, then released mid-match; their fighter idles and can be shoved
+  off like anyone else. If the host leaves voluntarily mid-match the match
+  continues; when everyone drops, the room is torn down.
+- **No mid-match join / spectate-from-lobby.** Rooms lock while a match is
+  running; newcomers get the room-not-joinable error and can join the next
+  round.
+- **In-memory rooms.** A server restart ends all rooms (the browser
+  recovers to the menu). No persistence, no cross-instance rooms.
+- **Idle rounds end fast.** A match where nobody moves ends when the
+  modifier windows (bumper balls) shove the idle fighters off - the sim is
+  identical to solo mechanics by design.
+
+## Known limitations (stage 1, solo)
 
 - Bots have distinct personalities (Rex aggressive, Momo balanced, Bit
   opportunistic) but only one implicit difficulty; no difficulty selector.
@@ -180,10 +305,9 @@ sudden death, colors, names) lives in
   mute WebAudio when the ringer switch is off).
 - Touch controls are not remappable; the floating joystick spawns wherever
   you drag (full screen) by design.
-- No unit/integration test suite; verification so far = `tsc` typecheck,
-  production build, and headless-browser smoke tests of the full round loop.
-- Multiplayer, accounts, persistence (beyond local best time), and analytics
-  are out of scope by design.
+- Real-device (iPhone/Android) spot-checks of the multiplayer flow on a
+  deployed host are still on the user side; automation covered headless
+  desktop browsers.
 
 ## License
 

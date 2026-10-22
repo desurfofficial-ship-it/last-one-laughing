@@ -139,6 +139,8 @@ export class UIManager {
 
   private pause(): void {
     if (this.paused || (this.phase !== 'playing' && this.phase !== 'countdown')) return;
+    // Shared multiplayer matches cannot be paused locally.
+    if (document.body.dataset.mode === 'mp') return;
     this.paused = true;
     this.pauseOverlay.classList.remove('hidden');
     gameBus.emit('cmd', { action: 'pause' });
