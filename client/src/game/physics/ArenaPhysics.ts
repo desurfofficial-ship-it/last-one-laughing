@@ -39,6 +39,12 @@ export class ArenaPhysics<F extends Body> {
     this.freeze = Math.max(this.freeze, ms / 1000);
   }
 
+  /** Drop any pending hitstop (used when a round restarts mid-freeze). */
+  clearFreeze(): void {
+    this.freeze = 0;
+    this.acc = 0;
+  }
+
   step(dt: number, slippery: boolean, mode: BoundaryMode): void {
     if (this.freeze > 0) {
       this.freeze -= dt;
@@ -175,7 +181,17 @@ export class ArenaPhysics<F extends Body> {
     }
 
     const deltaV = Math.max(impulse * a.invMass, impulse * b.invMass);
-    const big = attacker !== null || deltaV > COMBAT.bigHitDeltaV;
+    // "Big" must reflect a genuinely heavy impact. Previously ANY dash contact
+    // (even a grazing tap at deltaV ~ 60) counted as big and fired hitstop +
+    // shake + flash, while plain bumps needed deltaV > bigHitDeltaV. A dash
+    // now needs a real connection (deltaV > dashBigDeltaV) to count as big.
+    const big =
+      deltaV > COMBAT.bigHitDeltaV ||
+      (attacker !== null && deltaV > COMBAT.dashBigDeltaV);
+
+    // Direction the victim is shoved: toward b when b is the victim (or no
+    // attacker), toward a otherwise. Purely informational (view feedback).
+    const victimIsB = victim === b;
     this.onHit?.({
       x: (a.pos.x + b.pos.x) / 2,
       y: (a.pos.y + b.pos.y) / 2,
@@ -183,6 +199,8 @@ export class ArenaPhysics<F extends Body> {
       big,
       victim,
       attacker,
+      dirX: victimIsB ? nx : -nx,
+      dirY: victimIsB ? ny : -ny,
     });
   }
 }

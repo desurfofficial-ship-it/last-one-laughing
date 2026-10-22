@@ -31,10 +31,13 @@ export interface HitEvent<F extends Body> {
   y: number;
   /** Largest delta-v inflicted on either participant (px/s). */
   deltaV: number;
-  /** True when a dash was involved or the impact was heavy. */
+  /** True when the impact is heavy enough for full feedback (flash/hitstop/shake). */
   big: boolean;
   victim: F;
   attacker: F | null;
+  /** Unit direction the victim is shoved (contact normal, victim-relative). */
+  dirX: number;
+  dirY: number;
 }
 
 export interface RoundResultMsg {

@@ -83,6 +83,12 @@ class Sfx {
     this.tone(659, 659, 0.16, 'triangle', 0.2, 0.12);
     this.tone(784, 784, 0.22, 'triangle', 0.22, 0.24);
   }
+
+  /** Gentle descending cue when a bot takes the round. */
+  lose(): void {
+    this.tone(392, 392, 0.14, 'triangle', 0.16, 0);
+    this.tone(311, 262, 0.3, 'triangle', 0.16, 0.15);
+  }
 }
 
 export const sfx = new Sfx();

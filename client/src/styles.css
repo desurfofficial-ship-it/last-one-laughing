@@ -166,6 +166,12 @@ body[data-phase='playing'] #joystick-zone {
   display: block;
 }
 
+/* Once eliminated, the dash button is useless - hide it while spectating.
+   Must come after the phase rules above (same specificity, later wins). */
+body[data-player-out='1'] #dash-button {
+  display: none;
+}
+
 /* ---------- DOM menus ---------- */
 #ui-layer {
   position: fixed;

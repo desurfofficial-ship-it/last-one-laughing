@@ -70,6 +70,10 @@ export class UIManager {
 
     gameBus.on('phase', (payload: any) => this.onPhase(payload.phase as Phase));
     gameBus.on('result', (payload: any) => this.onResult(payload as RoundResultMsg));
+    gameBus.on('player-out', () => {
+      // Hide the (now useless) dash button while spectating.
+      document.body.dataset.playerOut = '1';
+    });
     gameBus.on('dash-cd', (payload: any) => {
       const frac = Math.max(0, Math.min(1, Number(payload?.frac ?? 0)));
       this.dashBtn.style.setProperty('--cd', frac.toFixed(3));
@@ -91,6 +95,11 @@ export class UIManager {
     this.phase = phase;
     this.paused = false;
     document.body.dataset.phase = phase;
+    delete document.body.dataset.playerOut;
+    // Cooldown indicator back to "ready" so a new round never inherits the
+    // previous round's leftover cooldown fill.
+    this.dashBtn.style.setProperty('--cd', '0');
+    this.dashBtn.classList.add('ready');
     this.hideAll();
     if (phase === 'idle') this.startOverlay.classList.remove('hidden');
   }

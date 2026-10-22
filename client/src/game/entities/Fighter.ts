@@ -5,7 +5,7 @@
  */
 
 import Phaser from 'phaser';
-import { DASH, FALL_ANIM_MS } from '../constants';
+import { COMBAT, DASH, FALL_ANIM_MS } from '../constants';
 import type { FighterDef } from '../constants';
 import { emptyInput } from '../physics/ArenaPhysics';
 import type { Body, FighterState, InputState } from '../types';
@@ -23,6 +23,10 @@ export class Fighter implements Body {
   kos = 0;
   lastHitBy: Fighter | null = null;
   facing = { x: 0, y: 1 };
+
+  /** View-only directional impact offset (decays fast; never feeds physics). */
+  private knockX = 0;
+  private knockY = 0;
 
   readonly radius: number;
   readonly mass: number;
@@ -127,7 +131,18 @@ export class Fighter implements Body {
 
   syncVisual(dt: number): void {
     if (this.state === 'out') return;
-    this.container.setPosition(this.pos.x, this.pos.y);
+
+    // Decay the knock offset exponentially (~140ms visible tail).
+    if (this.knockX !== 0 || this.knockY !== 0) {
+      const k = Math.exp(-dt * 16);
+      this.knockX *= k;
+      this.knockY *= k;
+      if (Math.hypot(this.knockX, this.knockY) < 0.4) {
+        this.knockX = 0;
+        this.knockY = 0;
+      }
+    }
+    this.container.setPosition(this.pos.x + this.knockX, this.pos.y + this.knockY);
 
     const speed = Math.hypot(this.vel.x, this.vel.y);
     if (speed > 20) {
@@ -153,6 +168,13 @@ export class Fighter implements Body {
     if (hot && !this.trailHot) this.trail.start();
     if (!hot && this.trailHot) this.trail.stop();
     this.trailHot = hot;
+  }
+
+  /** Directional knockback feedback: displace the view along the shove. */
+  knock(dirX: number, dirY: number, severity: number): void {
+    const amp = COMBAT.knockOffsetFrac * this.radius * Phaser.Math.Clamp(severity, 0, 1);
+    this.knockX += dirX * amp;
+    this.knockY += dirY * amp;
   }
 
   flashWhite(): void {
@@ -211,6 +233,8 @@ export class Fighter implements Body {
     this.eliminated = false;
     this.kos = 0;
     this.lastHitBy = null;
+    this.knockX = 0;
+    this.knockY = 0;
     this.container.setVisible(true).setAlpha(1).setScale(1);
     this.bodyArc.setFillStyle(this.def.color);
     this.trail.stop();

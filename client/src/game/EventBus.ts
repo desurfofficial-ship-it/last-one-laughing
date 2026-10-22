@@ -34,6 +34,7 @@ export class Emitter {
   }
 }
 
-/** Game -> UI events: 'phase' {phase}, 'result' {RoundResultMsg}, 'dash-cd' {frac}. */
+/** Game -> UI events: 'phase' {phase}, 'result' {RoundResultMsg}, 'dash-cd' {frac},
+ *  'player-out' {} (the player was eliminated this round). */
 /** UI -> Game commands: 'cmd' {action: UiCommand}. */
 export const gameBus = new Emitter();

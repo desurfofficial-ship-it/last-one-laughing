@@ -49,10 +49,19 @@ export const COMBAT = {
   restitution: 0.94,
   /** Victim delta-v (px/s) above which a hit counts as "big". */
   bigHitDeltaV: 850,
+  /** Victim delta-v (px/s) a dash needs to count as "big" (grazes stay light). */
+  dashBigDeltaV: 420,
+  /** Hits below this delta-v are resting nudges: no feedback at all. */
+  hitFxMinDeltaV: 140,
+  /** Min gap between non-big feedback on the same victim (ms); stops grind spam. */
+  pairFxCooldownMs: 110,
   /** Brief hitstop on big hits (ms) for impact weight. */
   freezeMs: 50,
-  shakeMs: 100,
+  /** Camera shake bounds for big hits; scaled by impact between min and max. */
+  shakeMs: 130,
   shakeIntensity: 0.0035,
+  /** View-only knockback offset on the victim, as a fraction of its radius. */
+  knockOffsetFrac: 0.42,
 };
 
 export const ROUND = {

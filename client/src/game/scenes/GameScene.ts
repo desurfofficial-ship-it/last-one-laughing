@@ -44,6 +44,7 @@ interface HudRefs {
   banner: Phaser.GameObjects.Text;
   countdown: Phaser.GameObjects.Text;
   bigText: Phaser.GameObjects.Text;
+  winnerSub: Phaser.GameObjects.Text;
   spectate: Phaser.GameObjects.Text;
   dots: Phaser.GameObjects.Arc[];
 }
@@ -62,6 +63,11 @@ export class GameScene extends Phaser.Scene {
   private suddenDeath = false;
   private pulseT = 0;
   private resultTimer?: Phaser.Time.TimerEvent;
+
+  /** Live impact-burst emitters (hard cap keeps pile-ups cheap on mobile). */
+  private hitEmitters = new Set<Phaser.GameObjects.Particles.ParticleEmitter>();
+  /** Victim -> time of last non-big feedback, to throttle grind re-contacts. */
+  private lastFxAt = new Map<Fighter, number>();
 
   private arena!: ArenaRefs;
   private hud!: HudRefs;
@@ -199,6 +205,20 @@ export class GameScene extends Phaser.Scene {
       .setDepth(30)
       .setVisible(false);
 
+    const winnerSub = this.add
+      .text(cx, ARENA_CENTER.y + 92, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '34px',
+        fontStyle: 'bold',
+        color: '#aab2d5',
+        stroke: '#0e1120',
+        strokeThickness: 6,
+        resolution: 2,
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(40)
+      .setVisible(false);
+
     const dots = FIGHTER_DEFS.map((def, i) =>
       this.add
         .circle(34 + i * 40, 46, 11, def.color, 0.95)
@@ -206,7 +226,7 @@ export class GameScene extends Phaser.Scene {
         .setStrokeStyle(2, 0xffffff, 0.25),
     );
 
-    this.hud = { timer, banner, countdown, bigText, spectate, dots };
+    this.hud = { timer, banner, countdown, bigText, winnerSub, spectate, dots };
   }
 
   // ------------------------------------------------------------ round flow
@@ -220,6 +240,9 @@ export class GameScene extends Phaser.Scene {
   startRound(): void {
     this.resultTimer?.remove(false);
     this.resetWorld();
+    // Drop stale dash requests pressed during "over"/menus so a new round
+    // never opens with an uncontrolled auto-dash at GO.
+    playerInput.consumeDash();
     this.countdownT = ROUND.countdown;
     this.lastCount = -1;
     this.setPhase('countdown');
@@ -234,10 +257,14 @@ export class GameScene extends Phaser.Scene {
 
   private resetWorld(): void {
     this.phys.arenaRadius = ARENA_RADIUS;
+    this.phys.clearFreeze();
     this.roundTime = 0;
     this.suddenDeath = false;
     this.pulseT = 0;
     this.slippery.silence();
+    this.lastFxAt.clear();
+    for (const em of this.hitEmitters) em.destroy();
+    this.hitEmitters.clear();
 
     this.fighters.forEach((f, i) => {
       f.reset();
@@ -262,9 +289,11 @@ export class GameScene extends Phaser.Scene {
 
     this.tweens.killTweensOf(this.hud.countdown);
     this.tweens.killTweensOf(this.hud.bigText);
+    this.tweens.killTweensOf(this.hud.winnerSub);
     this.tweens.killTweensOf(this.hud.banner);
     this.hud.countdown.setVisible(false).setAlpha(1).setScale(1).setText('');
     this.hud.bigText.setVisible(false).setAlpha(1).setScale(1).setText('');
+    this.hud.winnerSub.setVisible(false).setAlpha(1).setScale(1).setText('');
     this.hud.banner.setVisible(false).setAlpha(1);
     this.hud.spectate.setVisible(false);
     this.hud.timer.setVisible(true).setText('0:00');
@@ -391,17 +420,46 @@ export class GameScene extends Phaser.Scene {
 
   private handleHit(e: HitEvent<Fighter>): void {
     if (e.attacker) e.victim.lastHitBy = e.attacker;
-    this.burst(e.x, e.y, e.victim.def.color, e.big ? 16 : 8);
+
+    const now = this.time.now;
+    // Severity gating. Resting nudges produce nothing at all; non-big
+    // feedback on the same victim is throttled so grinding contests in
+    // pile-ups no longer machine-gun particles (seen on device footage).
+    if (!e.big) {
+      if (e.deltaV < COMBAT.hitFxMinDeltaV) return;
+      if (now - (this.lastFxAt.get(e.victim) ?? -Infinity) < COMBAT.pairFxCooldownMs) return;
+    }
+    this.lastFxAt.set(e.victim, now);
+
+    const dirDeg = (Math.atan2(e.dirY, e.dirX) * 180) / Math.PI;
+
     if (e.big) {
       e.victim.flashWhite();
       e.victim.squash();
+      e.victim.knock(e.dirX, e.dirY, 1);
+      e.attacker?.squash();
+      e.attacker?.knock(-e.dirX, -e.dirY, 0.35); // view-only recoil
       this.phys.freezeFor(COMBAT.freezeMs);
-      this.cameras.main.shake(COMBAT.shakeMs, COMBAT.shakeIntensity);
+      // Subtle shake, scaled by how hard the hit actually was.
+      const k = Phaser.Math.Clamp((e.deltaV - COMBAT.dashBigDeltaV) / 700, 0.35, 1);
+      this.cameras.main.shake(COMBAT.shakeMs * k, COMBAT.shakeIntensity * k);
+      this.impactFlash(e.x, e.y);
+      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 26, 12, 380);
+      if (e.attacker) {
+        // Small counter-spray back toward the attacker reads as impact debris.
+        this.impactBurst(e.x, e.y, e.attacker.def.color, dirDeg + 180, 34, 4, 300);
+      }
       sfx.hit(1);
       vibrate(25);
     } else if (e.deltaV > 380) {
       e.victim.squash();
-      sfx.hit(0.4);
+      e.victim.knock(e.dirX, e.dirY, 0.65);
+      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 30, 6, 300);
+      sfx.hit(0.5);
+    } else {
+      // Light contact: minimal directional feedback, silent.
+      e.victim.knock(e.dirX, e.dirY, 0.35);
+      this.impactBurst(e.x, e.y, e.victim.def.color, dirDeg, 30, 3, 230);
     }
   }
 
@@ -418,7 +476,17 @@ export class GameScene extends Phaser.Scene {
     this.splash(rimX, rimY, f.def.color);
     const inX = ARENA_CENTER.x + (dx / d) * (this.phys.arenaRadius - 70);
     const inY = ARENA_CENTER.y + (dy / d) * (this.phys.arenaRadius - 70);
-    this.time.delayedCall(120, () => this.lolText(inX, inY));
+    this.time.delayedCall(120, () => {
+      const outBy = f.lastHitBy && f.lastHitBy !== f ? f.lastHitBy : null;
+      if (f.isPlayer) {
+        this.koText(inX, inY, "YOU'RE OUT!", '#ff5d5d', outBy ? `Knocked out by ${outBy.def.name}` : null);
+      } else if (outBy?.isPlayer) {
+        this.koText(inX, inY, `YOU GOT ${f.def.name.toUpperCase()}!`, '#ffd23f', `${f.def.name} is out!`);
+      } else {
+        const cheer = LOL_TEXTS[Math.floor(Math.random() * LOL_TEXTS.length)];
+        this.koText(inX, inY, cheer, '#ffffff', `${f.def.name} is out!`);
+      }
+    });
     sfx.fall();
     vibrate(45);
 
@@ -430,7 +498,10 @@ export class GameScene extends Phaser.Scene {
     const dot = this.hud.dots[idx];
     if (dot) dot.setAlpha(0.18).setScale(0.7);
 
-    if (f.isPlayer) this.hud.spectate.setVisible(true);
+    if (f.isPlayer) {
+      this.hud.spectate.setVisible(true);
+      gameBus.emit('player-out', {});
+    }
   }
 
   private endRound(winner: Fighter | null): void {
@@ -454,9 +525,27 @@ export class GameScene extends Phaser.Scene {
       duration: 320,
       ease: 'Back.easeOut',
     });
-    if (winner?.isPlayer) {
+
+    const sub = this.hud.winnerSub;
+    sub
+      .setVisible(true)
+      .setAlpha(0)
+      .setText(winner ? (winner.isPlayer ? 'Last one laughing.' : 'Better luck next round.') : "Nobody's laughing...");
+    this.tweens.add({
+      targets: sub,
+      alpha: { from: 0, to: 1 },
+      duration: 380,
+      delay: 220,
+      ease: 'Quad.easeOut',
+    });
+
+    if (winner) {
+      // Every winner celebrates now (previously only the player did).
       winner.victory();
-      sfx.win();
+      this.confetti(winner.pos.x, winner.pos.y, winner.def.color, 0);
+      this.confetti(winner.pos.x, winner.pos.y, 0xffffff, 160);
+      if (winner.isPlayer) sfx.win();
+      else sfx.lose();
     }
 
     this.resultTimer = this.time.delayedCall(1400, () => {
@@ -517,20 +606,79 @@ export class GameScene extends Phaser.Scene {
 
   // ------------------------------------------------------------- fx helpers
 
-  private burst(x: number, y: number, tint: number, count: number): void {
+  /** Directional impact burst. dirDeg is the shove direction; particles spray
+   *  within ±spreadDeg of it. Capped concurrent emitters keep pile-ups cheap. */
+  private impactBurst(
+    x: number,
+    y: number,
+    tint: number,
+    dirDeg: number,
+    spreadDeg: number,
+    count: number,
+    speed: number,
+  ): void {
+    if (this.hitEmitters.size >= 6) {
+      const oldest = this.hitEmitters.values().next().value;
+      if (oldest) {
+        this.hitEmitters.delete(oldest);
+        oldest.destroy();
+      }
+    }
     const emitter = this.add
       .particles(x, y, 'dot', {
-        speed: { min: 140, max: 430 },
-        angle: { min: 0, max: 360 },
-        lifespan: { min: 220, max: 430 },
-        scale: { start: 0.9, end: 0 },
+        speed,
+        angle: { min: dirDeg - spreadDeg, max: dirDeg + spreadDeg },
+        lifespan: { min: 180, max: 380 },
+        scale: { start: 0.75, end: 0 },
         blendMode: 'ADD',
         tint,
         emitting: false,
       })
       .setDepth(20);
+    this.hitEmitters.add(emitter);
     emitter.explode(count);
-    this.time.delayedCall(600, () => emitter.destroy());
+    this.time.delayedCall(430, () => {
+      this.hitEmitters.delete(emitter);
+      emitter.destroy();
+    });
+  }
+
+  /** Short white flash ring at the contact point (big hits only). */
+  private impactFlash(x: number, y: number): void {
+    const ring = this.add
+      .circle(x, y, 20)
+      .setStrokeStyle(4, 0xffffff, 0.95)
+      .setDepth(21)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: ring,
+      scale: { from: 0.4, to: 1.7 },
+      alpha: { from: 0.95, to: 0 },
+      duration: 170,
+      ease: 'Quad.easeOut',
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  /** Winner-colored confetti pop with upward bias and gravity. */
+  private confetti(x: number, y: number, tint: number, delayMs: number): void {
+    this.time.delayedCall(delayMs, () => {
+      if (this.phase !== 'over') return;
+      const emitter = this.add
+        .particles(x, y, 'dot', {
+          speed: { min: 220, max: 520 },
+          angle: { min: 200, max: 340 },
+          lifespan: { min: 500, max: 800 },
+          scale: { start: 0.9, end: 0 },
+          gravityY: 900,
+          blendMode: 'ADD',
+          tint,
+          emitting: false,
+        })
+        .setDepth(22);
+      emitter.explode(12);
+      this.time.delayedCall(900, () => emitter.destroy());
+    });
   }
 
   private splash(x: number, y: number, color: number): void {
@@ -545,14 +693,14 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private lolText(x: number, y: number): void {
-    const text = LOL_TEXTS[Math.floor(Math.random() * LOL_TEXTS.length)];
+  /** Floating knockout messaging: a bold main line plus a small info sub-line. */
+  private koText(x: number, y: number, main: string, color: string, sub: string | null): void {
     const label = this.add
-      .text(x, y, text, {
+      .text(x, y, main, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '40px',
         fontStyle: 'bold',
-        color: '#ffffff',
+        color,
         stroke: '#0e1120',
         strokeThickness: 6,
         resolution: 2,
@@ -572,6 +720,36 @@ export class GameScene extends Phaser.Scene {
           duration: 420,
           delay: 260,
           onComplete: () => label.destroy(),
+        });
+      },
+    });
+
+    if (!sub) return;
+    const subLabel = this.add
+      .text(x, y + 44, sub, {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '24px',
+        fontStyle: 'bold',
+        color: '#aab2d5',
+        stroke: '#0e1120',
+        strokeThickness: 4,
+        resolution: 2,
+      })
+      .setOrigin(0.5)
+      .setDepth(25);
+    this.tweens.add({
+      targets: subLabel,
+      y: y + 44 - 70,
+      alpha: { from: 0, to: 0.95 },
+      duration: 150,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: subLabel,
+          alpha: 0,
+          duration: 420,
+          delay: 340,
+          onComplete: () => subLabel.destroy(),
         });
       },
     });
