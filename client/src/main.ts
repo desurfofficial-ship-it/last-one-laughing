@@ -109,6 +109,17 @@ gameBus.on('cmd', (payload: any) => {
   }
 });
 
-// Block browser gestures (scroll bounce, pull-to-refresh, pinch zoom).
-document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+// Block browser gestures (scroll bounce, pull-to-refresh, pinch zoom) WITHOUT
+// breaking menu button taps. A blanket preventDefault on every touchmove is
+// known to suppress the synthetic click on some iOS Safari versions, which
+// left the start screen looking completely static.
+document.addEventListener(
+  'touchmove',
+  (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t?.closest('input, textarea, button, a, label, .overlay, .panel')) return;
+    e.preventDefault();
+  },
+  { passive: false },
+);
 document.addEventListener('contextmenu', (e) => e.preventDefault());

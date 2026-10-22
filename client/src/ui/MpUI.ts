@@ -59,43 +59,60 @@ export class MpUI {
   constructor() {
     this.nameInput.value = readName();
 
-    el('btn-online').addEventListener('click', () => {
+    // pointerup + debounced click (same reason as UIManager: mobile WebKit can
+    // drop synthetic clicks when touchmove is non-passive-prevented).
+    const on = (node: HTMLElement, fn: () => void) => {
+      let last = 0;
+      const fire = () => {
+        const now = performance.now();
+        if (now - last < 350) return;
+        last = now;
+        fn();
+      };
+      node.addEventListener('pointerup', (e) => {
+        if (e.button !== 0 && e.pointerType === 'mouse') return;
+        fire();
+      });
+      node.addEventListener('click', fire);
+    };
+
+    on(el('btn-online'), () => {
       sfx.ui();
       this.openPanel();
     });
-    el('mp-close').addEventListener('click', () => {
+    on(el('mp-close'), () => {
       sfx.ui();
       // Leaving via X also leaves the room if seated.
       if (mpSession.connected) mpSession.requestLeave();
       this.closePanel();
     });
-    this.btnCreate.addEventListener('click', () => {
+    on(this.btnCreate, () => {
       sfx.ui();
       void this.withName(async (name) => {
         await mpSession.create(name);
       });
     });
-    this.btnJoin.addEventListener('click', () => {
+    on(this.btnJoin, () => {
       sfx.ui();
       const code = this.codeInput.value.trim().toUpperCase();
       void this.withName(async (name) => {
         await mpSession.join(code, name);
       });
     });
-    this.btnCopy.addEventListener('click', () => {
+    on(this.btnCopy, () => {
       sfx.ui();
       void this.shareInvite();
     });
-    this.btnReady.addEventListener('click', () => {
+    on(this.btnReady, () => {
       sfx.ui();
       const me = this.me();
       if (me) mpSession.sendReady(!me.ready);
     });
-    this.btnStart.addEventListener('click', () => {
+    on(this.btnStart, () => {
       sfx.ui();
       mpSession.sendStart();
     });
-    this.btnLeave.addEventListener('click', () => {
+    on(this.btnLeave, () => {
       sfx.ui();
       mpSession.requestLeave();
       this.renderLobbyForm();

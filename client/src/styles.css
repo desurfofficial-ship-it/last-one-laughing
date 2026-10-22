@@ -29,13 +29,19 @@ body {
 }
 
 /* ---------- Phaser canvas ---------- */
+/* All gameplay input is DOM-based (joystick / keyboard / dash button). The
+   canvas is view-only — if it keeps pointer-events, some mobile WebKit
+   builds let it steal taps from the menu buttons sitting above it. */
 #game-root {
   position: fixed;
   inset: 0;
+  z-index: 0;
+  pointer-events: none;
 }
 
 #game-root canvas {
   display: block;
+  pointer-events: none;
 }
 
 /* ---------- Touch controls ---------- */
@@ -224,6 +230,7 @@ body[data-player-out='1'] #dash-button {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   pointer-events: auto;
+  touch-action: manipulation;
   /* Full-screen menus always sit above the small out-card. */
   z-index: 2;
 }

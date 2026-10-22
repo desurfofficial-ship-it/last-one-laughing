@@ -53,19 +53,40 @@ export class UIManager {
   private outCard = el('out-card');
 
   constructor() {
-    el('btn-play').addEventListener('click', () => this.command('start'));
-    el('btn-restart').addEventListener('click', () => this.command('restart'));
-    el('btn-restart-2').addEventListener('click', () => this.command('restart'));
-    el('btn-resume').addEventListener('click', () => this.resume());
-    el('btn-menu').addEventListener('click', () => this.command('menu'));
-    el('btn-menu-2').addEventListener('click', () => this.command('menu'));
-    el('pause-button').addEventListener('click', () => this.pause());
+    // Prefer pointerup over click alone: a document-level touchmove
+    // preventDefault (used to block scroll bounce) can suppress the
+    // synthetic click on some mobile WebKit builds, which made the start
+    // screen feel completely dead. Debounce so pointerup + click don't
+    // double-fire on desktop.
+    const on = (id: string, fn: () => void) => {
+      const node = el(id);
+      let last = 0;
+      const fire = () => {
+        const now = performance.now();
+        if (now - last < 350) return;
+        last = now;
+        fn();
+      };
+      node.addEventListener('pointerup', (e) => {
+        if (e.button !== 0 && e.pointerType === 'mouse') return;
+        fire();
+      });
+      node.addEventListener('click', fire);
+    };
+
+    on('btn-play', () => this.command('start'));
+    on('btn-restart', () => this.command('restart'));
+    on('btn-restart-2', () => this.command('restart'));
+    on('btn-resume', () => this.resume());
+    on('btn-menu', () => this.command('menu'));
+    on('btn-menu-2', () => this.command('menu'));
+    on('pause-button', () => this.pause());
     // Out-card: spectate the finale, or bail straight back to the menu.
-    el('btn-watch').addEventListener('click', () => {
+    on('btn-watch', () => {
       this.outCard.classList.add('hidden');
       sfx.ui();
     });
-    el('btn-leave').addEventListener('click', () => {
+    on('btn-leave', () => {
       this.outCard.classList.add('hidden');
       this.command('menu');
     });
