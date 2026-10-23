@@ -10,7 +10,7 @@ COPY package.json package-lock.json ./
 COPY client/package.json client/
 COPY server/package.json server/
 COPY shared/package.json shared/
-RUN npm ci
+RUN npm ci --include=dev
 
 COPY . .
 # tsc --noEmit + vite build -> client/dist
