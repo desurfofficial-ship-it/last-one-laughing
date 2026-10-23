@@ -306,6 +306,15 @@ export class MpUI {
     const state = mpSession.state;
     if (!state) return;
 
+    // Authoritative phase is the source of truth for panel visibility.
+    // Relying only on gameBus 'phase' can leave the lobby stuck over a live
+    // match if the scene emits late or a state patch arrives first.
+    if (state.phase === 'countdown' || state.phase === 'playing' || state.phase === 'over') {
+      this.panel.classList.add('hidden');
+      document.body.dataset.phase = state.phase === 'over' ? 'over' : state.phase;
+      return;
+    }
+
     // Seated: show the room view (code + roster + ready/start).
     el('mp-form').classList.add('hidden');
     this.roomView.classList.remove('hidden');
@@ -343,6 +352,8 @@ export class MpUI {
     this.btnStart.classList.toggle('hidden', !iAmHost);
     this.btnStart.disabled = !inLobby || !allReady;
     this.btnStart.textContent = allReady ? 'Start match' : 'Waiting for ready players…';
+    // Only look primary when the host can actually start.
+    this.btnStart.classList.toggle('primary', allReady && inLobby);
 
     // The roster + buttons are the interface; a running match needs no copy.
     this.statusLine.textContent = '';

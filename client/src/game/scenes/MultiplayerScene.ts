@@ -187,13 +187,18 @@ export class MultiplayerScene extends Phaser.Scene {
     }
 
     for (const pid of pids) {
-      if (this.fighters.has(pid)) continue;
       const row = state.players.get(String(pid));
       if (!row) continue;
+      const existing = this.fighters.get(pid);
+      if (existing) {
+        // Color can arrive empty on the first patch; keep the view in sync.
+        if (row.css) existing.applyRosterColor(row.css, cssToColor(row.css));
+        continue;
+      }
       const fighter = new Fighter(this, {
-        name: row.name,
-        color: cssToColor(row.css),
-        css: row.css,
+        name: row.name || `P${pid}`,
+        color: cssToColor(row.css || '#ffffff'),
+        css: row.css || '#ffffff',
         radius: ROSTER_RADII[(pid - 1) % ROSTER_RADII.length],
         isPlayer: pid === mpSession.myPid,
       });
@@ -291,6 +296,9 @@ export class MultiplayerScene extends Phaser.Scene {
   }
 
   private onPhaseChange(prev: string, next: string): void {
+    // Keep body.dataset.phase in sync so CSS (touch controls, menu visibility)
+    // and MpUI both see the same phase the scene is rendering.
+    document.body.dataset.phase = next === 'lobby' ? 'idle' : next;
     if (next === 'lobby' && prev !== 'lobby') {
       // Victory lap finished: everything resets, the DOM lobby reopens.
       this.resetToLobbyView();
