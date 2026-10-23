@@ -71,12 +71,13 @@ export class MultiplayerScene extends Phaser.Scene {
 
   private phase = 'lobby';
   private endReason: 'forfeit' | 'normal' = 'normal';
-  private lastSent = { mx: 0, my: 0 };
   private sendTimer = 0;
   private pulseT = 0;
   private resultTimer?: Phaser.Time.TimerEvent;
   private lastFallBy: { pid: number; name: string } | null = null;
   private playerOut = false;
+  /** Pids the HUD dots were last built from; dots rebuild when it changes. */
+  private dotPids: number[] = [];
   private unsub: (() => void)[] = [];
 
   constructor() {
@@ -205,6 +206,12 @@ export class MultiplayerScene extends Phaser.Scene {
       });
       fighter.pos.x = row.x || ARENA_CENTER.x;
       fighter.pos.y = row.y || ARENA_CENTER.y;
+      // Joining mid-match: fighters already eliminated have no fall event left
+      // to replay - park their views out of sight instead of floating corpses.
+      if (row.state === 'out') {
+        fighter.eliminated = true;
+        fighter.container.setVisible(false);
+      }
       fighter.syncVisual(0);
       this.fighters.set(pid, fighter);
     }
@@ -212,6 +219,15 @@ export class MultiplayerScene extends Phaser.Scene {
     for (const pid of pids) {
       const row = state.players.get(String(pid));
       if (row) this.rows.set(pid, row);
+    }
+
+    // Mid-match joins/leaves change the roster: rebuild the alive-dots row
+    // so indices never point at the wrong player (or a gone one). The lobby
+    // needs no dots (the roster list is right there in the panel).
+    const wantDots = this.phase !== 'lobby';
+    if (wantDots && pids.join(',') !== this.dotPids.join(',')) {
+      this.buildDots();
+      this.dotPids = pids;
     }
   }
 
@@ -223,6 +239,7 @@ export class MultiplayerScene extends Phaser.Scene {
     this.lastFallBy = null;
     this.resultTimer?.remove(false);
     this.resultTimer = undefined;
+    this.dotPids = [];
     for (const em of this.emitters) em.destroy();
     this.emitters.clear();
     this.despawnBumpers(true);
@@ -308,7 +325,6 @@ export class MultiplayerScene extends Phaser.Scene {
     }
     if (next === 'countdown') {
       this.ensureFighters();
-      this.buildDots();
       gameBus.emit('phase', { phase: 'countdown' });
     }
     if (next === 'playing') {
@@ -458,14 +474,14 @@ export class MultiplayerScene extends Phaser.Scene {
       return;
     }
     this.sendTimer -= dt;
-    const mx = playerInputMove().mx;
-    const my = playerInputMove().my;
+    const { mx, my } = playerInputMove();
     const dash = playerInputConsumeDash();
-    const moved = mx !== this.lastSent.mx || my !== this.lastSent.my;
-    if (this.sendTimer <= 0 || dash || moved) {
+    // STRICT 30 Hz (+ dash taps): the server disconnects clients above
+    // maxMessagesPerSecond (60), and an analog joystick changes value every
+    // frame - "send when moved" flooded it at RAF rate and got players
+    // dropped mid-match. 30 Hz input latency is imperceptible.
+    if (this.sendTimer <= 0 || dash) {
       mpSession.sendInput(mx, my, dash);
-      this.lastSent.mx = mx;
-      this.lastSent.my = my;
       this.sendTimer = 1 / SEND_HZ;
     }
   }
@@ -663,7 +679,6 @@ export class MultiplayerScene extends Phaser.Scene {
   }
 
   private playEndFx(winnerId: number | null): void {
-    const state = mpSession.state;
     const winner = winnerId !== null ? this.fighters.get(winnerId) : null;
     const winnerRow = winnerId !== null ? this.rows.get(winnerId) : undefined;
     const isDraw = winnerId === null;
@@ -713,7 +728,7 @@ export class MultiplayerScene extends Phaser.Scene {
         playerWon: iWon,
         winnerName: isDraw ? 'Nobody' : (winnerRow?.name ?? 'Nobody'),
         winnerCss: isDraw ? PALETTE.text : (winnerRow?.css ?? PALETTE.text),
-        roundTime: state?.roundTime ?? 0,
+        roundTime: mpSession.state?.roundTime ?? 0,
         playerKos: me?.kos ?? 0,
         playerOut: this.playerOut,
         outBy: this.lastFallBy?.name ?? null,

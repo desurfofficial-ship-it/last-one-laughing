@@ -30,6 +30,12 @@ export class ArenaPhysics<F extends Body> {
 
   private acc = 0;
   private freeze = 0;
+  /** Internal clock (s); drives per-fighter bumper-strike cooldowns. */
+  private simTime = 0;
+  /** Fighter -> simTime when a bumper may strike it again. Without this a
+   *  moving bumper chains overlap impulses every substep and "rides" a
+   *  fighter from spawn to the rim (observed: 5 hits / 450 px in 3.7 s). */
+  private bumperCd = new Map<F, number>();
 
   constructor(
     public center: { x: number; y: number },
@@ -64,6 +70,7 @@ export class ArenaPhysics<F extends Body> {
   }
 
   private substep(h: number, slippery: boolean, mode: BoundaryMode): void {
+    this.simTime += h;
     const accel = slippery ? MOVEMENT.accelSlippery : MOVEMENT.accelNormal;
     const damping = slippery ? MOVEMENT.dampingSlippery : MOVEMENT.dampingNormal;
 
@@ -276,10 +283,13 @@ export class ArenaPhysics<F extends Body> {
       }
     }
 
-    // Obstacle vs fighter: infinite-mass impulse on the fighter only.
+    // Obstacle vs fighter: one clean strike, then a short grace. The grace
+    // skips impulse AND push-out so the ball rolls through instead of
+    // pinning the fighter to its leading rim and carrying them off.
     for (const o of obs) {
       for (const f of fs) {
         if (f.state !== 'active') continue;
+        if (this.simTime < (this.bumperCd.get(f) ?? 0)) continue;
         const nx = f.pos.x - o.pos.x;
         const ny = f.pos.y - o.pos.y;
         const d = Math.hypot(nx, ny) || 0.0001;
@@ -294,10 +304,23 @@ export class ArenaPhysics<F extends Body> {
         if (rvn >= 0) continue; // already separating
         // Soften vs. fighter-fighter hits: bumpers should displace, not
         // launch. Lower restitution, no flat bonus, hard cap on the shove.
-        const j = Math.min(-(1 + 0.55) * rvn, 620);
+        const j = Math.min(-(1 + 0.55) * rvn, COMBAT.bumpShoveCap);
         f.vel.x += ux * j;
         f.vel.y += uy * j;
         f.dashTimer = 0; // a bumper strike interrupts an ongoing dash
+        // Ricochet: reflect the ball off the fighter (elastic, like the rim)
+        // and back it out of contact. Without this the ball simply chases the
+        // victim it just shoved - its 300 px/s outruns the damped impulse and
+        // it "rides" the fighter from spawn to the rim (the round-decider bug).
+        const bvn = o.vel.x * ux + o.vel.y * uy;
+        if (bvn > 0) {
+          // approaching along u (u points ball -> fighter): reflect
+          o.vel.x -= 2 * bvn * ux;
+          o.vel.y -= 2 * bvn * uy;
+          o.pos.x -= ux * (minD - d);
+          o.pos.y -= uy * (minD - d);
+        }
+        this.bumperCd.set(f, this.simTime + COMBAT.bumpRestrikeS);
         this.onHit?.({
           x: o.pos.x + ux * o.radius,
           y: o.pos.y + uy * o.radius,

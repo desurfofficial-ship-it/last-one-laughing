@@ -73,6 +73,18 @@ mpSession.on('status', (status: string) => {
   }
 });
 
+// A terminal session failure (seat expired, room died while we were in it)
+// must not leave the frozen multiplayer scene as the only screen: fall back
+// to the solo menu. First-join failures arrive while mpActive is still
+// false, so they are untouched - the lobby form already shows the reason.
+mpSession.on('error', () => {
+  if (!mpActive || mpSession.connected) return;
+  mpActive = false;
+  game.scene.stop(SCENE_MP);
+  game.scene.start(SCENE_GAME);
+  document.body.dataset.mode = 'solo';
+});
+
 gameBus.on('cmd', (payload: any) => {
   const action = payload?.action as UiCommand;
   switch (action) {

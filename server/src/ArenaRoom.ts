@@ -26,6 +26,7 @@ import {
   ROSTER_COLORS,
   ROSTER_RADII,
   type ErrorMsg,
+  type MatchEvent,
 } from '../../shared/src/net/protocol';
 import { ARENA_RADIUS } from '../../shared/src/constants';
 
@@ -351,7 +352,9 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
     }
 
     e.update(1 / TICK_HZ);
-    for (const ev of e.drainEvents()) this.broadcast('ev', ev);
+    const events = e.drainEvents();
+    if (process.env.LOL_EV === '1') logMatchEvents(e, events);
+    for (const ev of events) this.broadcast('ev', ev);
     this.writeMatchState(e);
 
     if (e.isOver && this.endedAt === null) this.endedAt = Date.now();
@@ -475,21 +478,14 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
   /**
    * A seat was released while a round exists: keep the match honest.
    * The released fighter must not linger as a ghost that can never be
-   * eliminated (it would stall the round forever). Countdown aborts the
-   * match outright when too few fighters remain; playing force-outs the
-   * fighter through the normal fall path; 'over' needs nothing.
+   * eliminated (it would stall the round forever), and its schema row is
+   * already gone so clients cannot render it. forceOut runs the normal fall
+   * path in countdown AND playing (a countdown leave in a 2-player room ends
+   * the round as a win for whoever stayed; in bigger rooms the match simply
+   * continues without them). 'over' needs nothing.
    */
   private onSeatReleased(pid: number): void {
-    const e = this.engine;
-    if (!e) return;
-    if (e.phase === 'countdown') {
-      const present = [...this.state.players.values()].filter((p) => p.present).length;
-      if (present < MIN_PLAYERS) {
-        this.backToLobby();
-        return;
-      }
-    }
-    e.forceOut(pid);
+    this.engine?.forceOut(pid);
   }
 
   /**
@@ -516,6 +512,36 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
 
 function r1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+/**
+ * Verbose diagnostics for server operators (LOL_EV=1): logs match-shaping
+ * events with round time and positions. Never enabled by default; logs no
+ * secrets (there are none in MatchEvents).
+ */
+function logMatchEvents(e: RoundEngine, events: MatchEvent[]): void {
+  for (const ev of events) {
+    if (
+      ev.t !== 'hit' &&
+      ev.t !== 'fall' &&
+      ev.t !== 'mod' &&
+      ev.t !== 'sudden' &&
+      ev.t !== 'phase' &&
+      ev.t !== 'end'
+    ) {
+      continue;
+    }
+    const pos =
+      ev.t === 'hit' ? ` at(${Math.round(ev.x)},${Math.round(ev.y)}) dv${Math.round(ev.deltaV)}` : '';
+    const victim =
+      ev.t === 'fall'
+        ? (() => {
+            const f = e.fighters.find((x) => x.id === ev.id);
+            return ` pos(${Math.round(f?.pos.x ?? -1)},${Math.round(f?.pos.y ?? -1)}) R=${Math.round(e.phys.arenaRadius)}`;
+          })()
+        : '';
+    console.log(`[ev] t=${e.roundTime.toFixed(1)} ${JSON.stringify(ev)}${pos}${victim}`);
+  }
 }
 
 function r2(n: number): number {

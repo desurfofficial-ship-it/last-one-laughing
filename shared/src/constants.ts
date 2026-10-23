@@ -66,6 +66,13 @@ export const COMBAT = {
   knockOffsetFrac: 0.42,
   /** Victim delta-v (px/s) above which a BUMPER strike counts as "big". */
   bumpBigDeltaV: 460,
+  /** Hard cap on a single bumper shove (px/s). Nothing hits harder than a
+   *  dash slam (slamMinKnock); a bumper should break formation, not execute. */
+  bumpShoveCap: 470,
+  /** Seconds after a bumper strike before the same fighter can be struck
+   *  again. The grace skips impulse AND overlap push-out, so a rolling ball
+   *  passes through instead of pinning its victim against the arena rim. */
+  bumpRestrikeS: 0.45,
   /** A confirmed dash slam (deltaV > dashBigDeltaV) always shoves the victim
    *  at least this fast along the contact normal. Prevents "dead slams"
    *  where a real connection barely moves the target. */

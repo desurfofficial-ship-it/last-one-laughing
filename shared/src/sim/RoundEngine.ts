@@ -191,14 +191,16 @@ export class RoundEngine {
    * Server authority: remove a fighter whose seat was released mid-match
    * (voluntary leave or reconnection-grace expiry). Goes through the normal
    * fall path so eliminations, KO attribution (none here - leaving is not a
-   * kill) and the end-of-round check stay consistent. No-op outside playing.
-   */
-  /**
-   * Remove a fighter whose seat was released. `forfeit` marks the round end
+   * kill) and the end-of-round check stay consistent. Works in countdown too:
+   * a released seat must never linger as an invisible collider (its schema
+   * row is already gone, so clients cannot even render it) - if the fall
+   * leaves fewer than two active fighters the round resolves on the spot as
+   * a forfeit instead of running with a ghost. `forfeit` marks the round end
    * so clients can show "Opponent left" instead of a normal KO win.
+   * No-op once the round is over.
    */
   forceOut(id: number, forfeit = true): void {
-    if (this.phase !== 'playing') return;
+    if (this.phase === 'over') return;
     const f = this.fighters.find((x) => x.id === id);
     if (!f || f.state !== 'active') return;
     f.state = 'falling';
@@ -313,7 +315,9 @@ export class RoundEngine {
   }
 
   private endRound(winnerId: number | null, reason: 'forfeit' | 'normal' = 'normal'): void {
-    if (this.phase !== 'playing') return;
+    // 'over' (not 'playing') so a countdown forfeit resolves immediately
+    // instead of waiting for GO with one fighter standing alone.
+    if (this.phase === 'over') return;
     this.phase = 'over';
     this.winnerId = winnerId;
     this.slippery.silence();

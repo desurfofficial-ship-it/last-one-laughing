@@ -373,7 +373,7 @@ describe('ArenaRoom seat release mid-match (no ghost fighters)', () => {
     b.room.leave().catch(() => {});
   });
 
-  it('a leave during countdown with too few players aborts back to the lobby', async () => {
+  it('a leave during countdown resolves the round (no ghost fighter): forfeit win, then lobby', async () => {
     const a = await join(port, { name: 'Ada' });
     const b = await join(port, { code: a.welcome.code, name: 'Basil' });
     a.room.send('ready', true);
@@ -384,7 +384,11 @@ describe('ArenaRoom seat release mid-match (no ghost fighters)', () => {
     await waitFor(() => a.room.state.phase === 'countdown', 'countdown', 9_000);
 
     await b.room.leave();
-    await waitFor(() => a.room.state.phase === 'lobby', 'match aborted to lobby', 9_000);
+    // The seat release force-outs Basil's fighter; at GO only Ada is active,
+    // so the round ends as a forfeit win instead of running with a ghost.
+    await waitFor(() => a.room.state.phase === 'over', 'round resolved to over', 9_000);
+    expect(a.room.state.winnerPid).toBe(a.welcome.pid);
+    await waitFor(() => a.room.state.phase === 'lobby', 'lobby return', 9_000);
     expect(a.room.state.players.has(String(b.welcome.pid))).toBe(false);
     a.room.leave().catch(() => {});
   });

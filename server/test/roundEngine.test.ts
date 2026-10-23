@@ -291,21 +291,79 @@ describe('RoundEngine.forceOut (seat released mid-match)', () => {
     expect(e.fighters[0].state).toBe('active');
   });
 
-  it('is a no-op outside playing and for unknown/already-out ids', () => {
+  it('runs in countdown too (a released seat must not ghost), and ignores unknown/already-out ids', () => {
     const e = makeEngine(7);
-    e.forceOut(2); // countdown
-    expect(e.drainEvents().filter((x) => x.t === 'fall')).toHaveLength(0);
-    expect(e.fighters[1].state).toBe('active');
+    e.forceOut(2); // countdown: the seat is gone, the fighter falls instead of lingering as an invisible collider
+    const fall = e.drainEvents().find((x) => x.t === 'fall');
+    expect(fall).toEqual({ t: 'fall', id: 2, byId: null });
+    expect(e.fighters[1].state).toBe('falling');
 
-    run(e, 4); // playing
-    e.forceOut(99);
-    e.forceOut(2);
-    e.forceOut(2); // already falling
+    run(e, 4); // GO resolves the round: only fighter 1 is active
+    expect(e.isOver).toBe(true);
+    expect(e.winnerId).toBe(1);
+    e.drainEvents();
+
+    e.forceOut(99); // unknown id
+    e.forceOut(2); // already out
+    e.forceOut(1); // over phase
     const falls = e.drainEvents().filter((x) => x.t === 'fall');
-    expect(falls).toHaveLength(1);
+    expect(falls).toHaveLength(0);
   });
 });
 
+
+describe('bumper strikes (displace, do not execute)', () => {
+  it('caps a single shove at bumpShoveCap no matter the closing speed', () => {
+    const e = makeEngine();
+    run(e, ROUND.countdown + 0.05); // playing
+    e.drainEvents();
+    const [victim] = e.fighters;
+    victim.pos.x = CENTER;
+    victim.pos.y = CENTER;
+    victim.vel.x = 0;
+    victim.vel.y = 0;
+    e.phys.obstacles.push({
+      pos: { x: CENTER - 120, y: CENTER },
+      vel: { x: 800, y: 0 }, // far faster than a real bumper: exercises the cap
+      radius: MODS.bumperRadius,
+    });
+    e.phys.arenaRadius = ARENA_RADIUS; // keep 'open' boundary honest
+    let peak = 0;
+    for (let i = 0; i < Math.round(0.2 / TICK); i++) {
+      e.update(TICK);
+      peak = Math.max(peak, Math.hypot(victim.vel.x, victim.vel.y));
+    }
+    expect(peak).toBeLessThanOrEqual(470 + 1e-6);
+    expect(peak).toBeGreaterThan(400); // still a meaty shove
+  });
+
+  it('cannot restrike a fighter within the grace window (no death-ride)', () => {
+    const e = makeEngine();
+    run(e, ROUND.countdown + 0.05);
+    e.drainEvents();
+    const [victim] = e.fighters;
+    victim.pos.x = CENTER;
+    victim.pos.y = CENTER;
+    victim.vel.x = 0;
+    victim.vel.y = 0;
+    // Bumper plows through the stationary fighter along +x.
+    e.phys.obstacles.push({
+      pos: { x: CENTER - 120, y: CENTER },
+      vel: { x: MODS.bumperSpeed, y: 0 },
+      radius: MODS.bumperRadius,
+    });
+    let strikes = 0;
+    const prevOnHit = e.phys.onHit;
+    e.phys.onHit = (hit) => {
+      if (hit.victim === victim) strikes++;
+    };
+    run(e, 0.45); // exactly the grace window after the first strike
+    e.phys.onHit = prevOnHit;
+    expect(strikes).toBe(1);
+    // And the ball bounced off: it cannot chase its victim.
+    expect(e.phys.obstacles[0]?.vel.x ?? 1).toBeLessThan(0);
+  });
+});
 
 describe('RoundEngine explicit roster ids (pid gaps)', () => {
   it('honours RosterEntry.id so non-contiguous pids stay addressable', () => {

@@ -214,7 +214,17 @@ export class MpUI {
     if (/^[A-Z2-9]{6}$/.test(roomParam)) {
       const name = readName();
       if (name) {
-        void mpSession.join(roomParam, name).catch(() => this.openPanel());
+        void mpSession
+          .join(roomParam, name)
+          .catch(() => {
+            // openPanel clears the error line as a side effect; the failed
+            // deep-link join IS the news here, so put the reason back.
+            this.openPanel();
+            if (mpSession.lastError) {
+              this.errorLine.textContent = mpSession.lastError;
+              this.errorLine.classList.remove('hidden');
+            }
+          });
         this.openPanel();
       } else {
         this.openPanel();
