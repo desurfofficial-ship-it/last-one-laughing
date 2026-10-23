@@ -153,6 +153,15 @@ export class Fighter implements Body {
     this.knockY += dirY * amp;
   }
 
+  /** Update fill when the authoritative roster color arrives/changes. */
+  applyRosterColor(css: string, color: number): void {
+    if (!css || !Number.isFinite(color)) return;
+    if (this.def.css === css && this.def.color === color) return;
+    (this.def as { css: string; color: number }).css = css;
+    (this.def as { css: string; color: number }).color = color;
+    if (this.state !== 'out') this.bodyArc.setFillStyle(color);
+  }
+
   flashWhite(): void {
     this.bodyArc.setFillStyle(0xffffff);
     this.scene.time.delayedCall(80, () => {
