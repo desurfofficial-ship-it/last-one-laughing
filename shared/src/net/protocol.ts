@@ -42,7 +42,7 @@ export type MatchEvent =
   | { t: 'mod'; kind: ModKind; stage: 'warn' | 'active' | 'end' }
   | { t: 'slippery'; stage: 'warn' | 'on' | 'off' }
   | { t: 'sudden' }
-  | { t: 'end'; winnerId: number | null };
+  | { t: 'end'; winnerId: number | null; reason?: 'forfeit' | 'normal' };
 
 /** Server -> joining client, right after a seat is granted. */
 export interface WelcomeMsg {

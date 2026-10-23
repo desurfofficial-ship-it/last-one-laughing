@@ -60,6 +60,8 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
   private voluntary = new Set<string>();
   private nextPid = 1;
   private endedAt: number | null = null;
+  /** Lobby auto-start when everyone is ready (cancelled if someone un-readies). */
+  private autoStartTimer: ReturnType<typeof setTimeout> | null = null;
 
   override onCreate(): void {
     this.maxClients = MAX_PLAYERS;
@@ -166,6 +168,7 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
       this.reassignHost();
       this.onSeatReleased(pid);
       this.maybeAbandonMatch();
+      this.scheduleAutoStart(); // may cancel if below min / not all ready
       console.log(`[arena ${this.roomId}] - player ${pid} left (code ${code}); seat released`);
       return;
     }
@@ -199,6 +202,7 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
     const player = this.rowOf(client);
     if (!player || this.engine) return; // lobby only
     player.ready = ready === true;
+    this.scheduleAutoStart();
   }
 
   private handleStart(client: Client): void {
@@ -213,6 +217,25 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
   }
 
   /** Returns an error code on failure, null on success. */
+  /** When every present player is ready, auto-start after a short delay so
+   *  guests are not stuck staring at a silent lobby while the host hunts for
+   *  the Start button. Host can still start immediately. */
+  private scheduleAutoStart(): void {
+    if (this.autoStartTimer) {
+      clearTimeout(this.autoStartTimer);
+      this.autoStartTimer = null;
+    }
+    if (this.engine) return;
+    const present = [...this.state.players.values()].filter((p) => p.present);
+    if (present.length < MIN_PLAYERS) return;
+    if (!present.every((p) => p.ready)) return;
+    this.autoStartTimer = setTimeout(() => {
+      this.autoStartTimer = null;
+      const err = this.startMatch();
+      if (err) console.log(`[arena ${this.roomId}] auto-start skipped: ${err}`);
+    }, 2500);
+  }
+
   private startMatch(): Extract<ErrorMsg['code'], 'match_running' | 'need_players' | 'need_ready'> | null {
     if (this.engine) return 'match_running';
     // Only present players enter the match. Absent seats (reconnection grace)
@@ -232,6 +255,10 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
       css: p.css,
       radius: ROSTER_RADII[(p.pid - 1) % ROSTER_RADII.length],
     }));
+    if (this.autoStartTimer) {
+      clearTimeout(this.autoStartTimer);
+      this.autoStartTimer = null;
+    }
     this.engine = new RoundEngine(roster, seed);
     this.pendingInputs.clear();
     this.endedAt = null;
@@ -250,6 +277,10 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
 
   /** Over -> lobby: reset round view, unlock the room. */
   private backToLobby(): void {
+    if (this.autoStartTimer) {
+      clearTimeout(this.autoStartTimer);
+      this.autoStartTimer = null;
+    }
     this.engine = null;
     this.pendingInputs.clear();
     this.endedAt = null;
@@ -281,6 +312,16 @@ export class ArenaRoom extends Room<{ state: GameStateT }> {
     const e = this.engine;
     if (!e) return;
     const playing = e.phase === 'playing';
+
+    // Hold the match while a seat is in the reconnection grace window so a
+    // brief drop does not become an instant forfeit / edge-fall win.
+    if (playing) {
+      const waiting = [...this.state.players.values()].some((p) => !p.present);
+      if (waiting) {
+        this.writeMatchState(e);
+        return;
+      }
+    }
 
     for (const f of e.fighters) {
       const player = this.state.players.get(String(f.id));

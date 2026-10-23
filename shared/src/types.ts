@@ -57,6 +57,8 @@ export interface RoundResultMsg {
   playerKos: number;
   playerOut: boolean;
   outBy: string | null;
+  /** Set when the match ended because the opponent left / seat expired. */
+  reason?: 'forfeit' | 'normal';
 }
 
 export type UiCommand = 'start' | 'pause' | 'resume' | 'restart' | 'menu';

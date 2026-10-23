@@ -140,7 +140,10 @@ export class MpUI {
         this.reconnectBanner.classList.add('hidden');
         // Connection losses can happen while the panel is hidden (mid-match);
         // surface the failure instead of leaving a dead screen.
-        if (!mpSession.connected) this.openPanel();
+        if (!mpSession.connected) {
+          this.openPanel();
+          this.renderLobbyForm();
+        }
       }),
       mpSession.on('server-error', (e: { code: string; message: string }) => {
         this.errorLine.textContent = e.message;
@@ -167,6 +170,7 @@ export class MpUI {
       }),
       mpSession.on('reconnected', () => {
         this.reconnectBanner.classList.add('hidden');
+        this.render();
       }),
     );
 
@@ -355,8 +359,19 @@ export class MpUI {
     // Only look primary when the host can actually start.
     this.btnStart.classList.toggle('primary', allReady && inLobby);
 
-    // The roster + buttons are the interface; a running match needs no copy.
-    this.statusLine.textContent = '';
+    // Guest feedback: silent lobby was a common playtest complaint.
+    if (!inLobby) {
+      this.statusLine.textContent = '';
+    } else if (allReady && iAmHost) {
+      this.statusLine.textContent = 'Everyone is ready — starting soon, or press Start.';
+    } else if (allReady && !iAmHost) {
+      this.statusLine.textContent = 'Waiting for host to start… (auto-starts in a moment)';
+    } else if (!allReady) {
+      const need = present.filter((p) => !p.ready).map((p) => p.name).join(', ');
+      this.statusLine.textContent = need ? `Waiting on: ${need}` : '';
+    } else {
+      this.statusLine.textContent = '';
+    }
   }
 
   private renderLobbyForm(): void {

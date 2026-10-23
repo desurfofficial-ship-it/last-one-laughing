@@ -75,7 +75,7 @@ export const COMBAT = {
 /** Moving-obstacle + shrinking-arena modifier timing and tuning. */
 export const MODS = {
   /** Seconds of quiet after GO before the first modifier warning. */
-  firstDelay: 6,
+  firstDelay: 14,
   /** Seconds of quiet between one modifier window ending and the next warning. */
   restBetween: 12,
   /** Seconds of warning banner before a modifier activates. */
@@ -88,7 +88,7 @@ export const MODS = {
   /** Shrinking-arena window (s), how much radius it removes (px), and the
    *  seconds it takes to ease back out afterwards. */
   shrinkDuration: 7,
-  shrinkAmount: 100,
+  shrinkAmount: 70,
   shrinkRestore: 2.5,
   /** Modifier shrink never goes below this, keeping headroom for sudden death. */
   shrinkFloor: 40,
@@ -106,11 +106,11 @@ export const ROUND = {
 
 export const SLIPPERY = {
   /** Seconds of normal floor between slippery phases. */
-  normal: 10,
+  normal: 14,
   /** Seconds of warning banner before the floor turns slippery. */
-  warning: 2,
+  warning: 2.5,
   /** Seconds the floor stays slippery. */
-  slippery: 4,
+  slippery: 3.5,
 };
 
 export const FALL_ANIM_MS = 450;
