@@ -99,7 +99,7 @@ export class RoundEngine {
     // so lobby leave/rejoin gaps never desync inputs, schema writes, or
     // forceOut. When omitted (unit tests), fall back to 1-based index.
     const n = roster.length;
-    const spawnR = ARENA_RADIUS * 0.55;
+    const spawnR = ARENA_RADIUS * 0.42;
     const usedIds = new Set<number>();
     roster.forEach((entry, i) => {
       const id = entry.id ?? i + 1;
@@ -193,13 +193,19 @@ export class RoundEngine {
    * fall path so eliminations, KO attribution (none here - leaving is not a
    * kill) and the end-of-round check stay consistent. No-op outside playing.
    */
-  forceOut(id: number): void {
+  /**
+   * Remove a fighter whose seat was released. `forfeit` marks the round end
+   * so clients can show "Opponent left" instead of a normal KO win.
+   */
+  forceOut(id: number, forfeit = true): void {
     if (this.phase !== 'playing') return;
     const f = this.fighters.find((x) => x.id === id);
     if (!f || f.state !== 'active') return;
     f.state = 'falling';
     f.lastHitById = null;
     this.handleFallStart(f);
+    const alive = this.fighters.filter((x) => x.state === 'active');
+    if (alive.length <= 1) this.endRound(alive[0]?.id ?? null, forfeit ? 'forfeit' : 'normal');
   }
 
   update(dt: number): void {
@@ -306,7 +312,7 @@ export class RoundEngine {
     this.events.push({ t: 'fall', id: f.id, byId });
   }
 
-  private endRound(winnerId: number | null): void {
+  private endRound(winnerId: number | null, reason: 'forfeit' | 'normal' = 'normal'): void {
     if (this.phase !== 'playing') return;
     this.phase = 'over';
     this.winnerId = winnerId;
@@ -315,7 +321,7 @@ export class RoundEngine {
     this.despawnBumpers();
     // Victory-lap radius (resetWorld does the full restore next round).
     this.phys.arenaRadius = Math.max(ARENA_MIN_RADIUS, this.baseRadius);
-    this.events.push({ t: 'phase', p: 'over' }, { t: 'end', winnerId });
+    this.events.push({ t: 'phase', p: 'over' }, { t: 'end', winnerId, reason });
   }
 
   private beginSuddenDeath(): void {

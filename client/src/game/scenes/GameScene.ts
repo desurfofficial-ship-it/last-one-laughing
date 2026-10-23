@@ -331,7 +331,7 @@ export class GameScene extends Phaser.Scene {
     this.fighters.forEach((f, i) => {
       f.reset();
       const a = (SPAWN_ANGLES_DEG[i] * Math.PI) / 180;
-      const spawnR = ARENA_RADIUS * 0.55;
+      const spawnR = ARENA_RADIUS * 0.42;
       f.pos.x = ARENA_CENTER.x + Math.cos(a) * spawnR;
       f.pos.y = ARENA_CENTER.y + Math.sin(a) * spawnR;
       f.facing.x = ARENA_CENTER.x - f.pos.x;

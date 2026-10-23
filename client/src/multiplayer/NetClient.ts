@@ -230,7 +230,10 @@ export class MpSession {
       } catch {
         /* private mode */
       }
-      this.setStatus('lobby');
+      // Stay "in-match" when the authoritative phase is mid-round so the UI
+      // does not flash the lobby form over a live game.
+      const phase = (room.state as { phase?: string } | undefined)?.phase;
+      this.setStatus(phase === 'lobby' || !phase ? 'lobby' : 'in-match');
       this.emit('reconnected', {});
     });
     room.onLeave((code) => this.handleLeave(code));
@@ -274,6 +277,7 @@ export class MpSession {
     };
     const deadline = Date.now() + 95_000; // slightly past the server's grace
     const attempt = async (): Promise<void> => {
+      let delay = 800;
       while (!cancelled && Date.now() < deadline) {
         try {
           await this.reconnectToken(token);
@@ -285,10 +289,15 @@ export class MpSession {
             if (!cancelled) this.finishReconnectFailure('Your seat expired - join again.');
             return;
           }
-          await new Promise((r) => setTimeout(r, 1500));
+          // Exponential backoff with a soft ceiling; keep status visible.
+          this.setStatus('reconnecting');
+          await new Promise((r) => setTimeout(r, delay));
+          delay = Math.min(5000, Math.round(delay * 1.5));
         }
       }
-      if (!cancelled) this.finishReconnectFailure('Could not rejoin the room in time.');
+      if (!cancelled) {
+        this.finishReconnectFailure('Could not rejoin the room in time. Create or join again.');
+      }
     };
     void attempt();
   }

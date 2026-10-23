@@ -181,17 +181,34 @@ export class UIManager {
   }
 
   private onResult(r: RoundResultMsg): void {
-    const title =
-      r.winnerName === 'Nobody' ? 'DRAW!' : r.playerWon ? 'YOU WIN!' : `${r.winnerName.toUpperCase()} WINS!`;
+    const forfeit = r.reason === 'forfeit';
+    const title = forfeit
+      ? r.playerWon
+        ? 'OPPONENT LEFT'
+        : 'YOU LEFT'
+      : r.winnerName === 'Nobody'
+        ? 'DRAW!'
+        : r.playerWon
+          ? 'YOU WIN!'
+          : `${r.winnerName.toUpperCase()} WINS!`;
     this.resultTitle.textContent = title;
-    this.resultTitle.style.color = r.playerWon ? '#ffd23f' : r.winnerCss;
-    // Sub-line carries attribution only ("knocked out by X"); flavor text is cut.
-    const sub = r.playerWon ? '' : r.playerOut ? `Knocked out by ${r.outBy ?? 'the arena'}` : '';
+    this.resultTitle.style.color = forfeit ? '#ffd23f' : r.playerWon ? '#ffd23f' : r.winnerCss;
+    // Sub-line: forfeit explanation, or KO attribution on a normal loss.
+    const sub = forfeit
+      ? r.playerWon
+        ? 'They disconnected — not counted as a knockout win.'
+        : 'You left the match.'
+      : r.playerWon
+        ? ''
+        : r.playerOut
+          ? `Knocked out by ${r.outBy ?? 'the arena'}`
+          : '';
     this.resultSub.textContent = sub;
     this.resultSub.classList.toggle('hidden', !sub);
 
     let best = readBest();
-    if (r.playerWon) {
+    // Forfeit "wins" are not skill wins — don't pollute the fastest-win record.
+    if (r.playerWon && r.reason !== 'forfeit') {
       best = best === null ? r.roundTime : Math.min(best, r.roundTime);
       writeBest(best);
     }

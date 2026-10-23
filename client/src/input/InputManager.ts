@@ -58,7 +58,18 @@ export class InputManager {
 
   // ------------------------------------------------------------- keyboard
 
+  /** True when the user is typing into a form field — game keys must not steal letters. */
+  private isTypingTarget(t: EventTarget | null): boolean {
+    const el = t as HTMLElement | null;
+    if (!el) return false;
+    const tag = (el.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (el.isContentEditable) return true;
+    return !!el.closest?.('input, textarea, select, [contenteditable="true"]');
+  }
+
   private onKeyDown = (e: KeyboardEvent): void => {
+    if (this.isTypingTarget(e.target)) return;
     if (MOVE_KEYS[e.code] || DASH_KEYS.has(e.code)) e.preventDefault();
     if (e.repeat) return;
     this.keys.add(e.code);
@@ -67,6 +78,7 @@ export class InputManager {
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
+    if (this.isTypingTarget(e.target)) return;
     this.keys.delete(e.code);
     this.applyKeyboard();
   };

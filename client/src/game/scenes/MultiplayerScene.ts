@@ -70,6 +70,7 @@ export class MultiplayerScene extends Phaser.Scene {
   private hud!: HudRefs;
 
   private phase = 'lobby';
+  private endReason: 'forfeit' | 'normal' = 'normal';
   private lastSent = { mx: 0, my: 0 };
   private sendTimer = 0;
   private pulseT = 0;
@@ -217,6 +218,7 @@ export class MultiplayerScene extends Phaser.Scene {
   /** Lobby backdrop: fighters parked on the spawn ring, HUD cleared. */
   private resetToLobbyView(): void {
     this.phase = 'lobby';
+    this.endReason = 'normal';
     this.playerOut = false;
     this.lastFallBy = null;
     this.resultTimer?.remove(false);
@@ -251,7 +253,7 @@ export class MultiplayerScene extends Phaser.Scene {
       const f = this.fighters.get(pid)!;
       f.reset();
       const a = ((135 + (360 / Math.max(pids.length, 2)) * i) * Math.PI) / 180;
-      const spawnR = ARENA_RADIUS * 0.55;
+      const spawnR = ARENA_RADIUS * 0.42;
       f.pos.x = ARENA_CENTER.x + Math.cos(a) * spawnR;
       f.pos.y = ARENA_CENTER.y + Math.sin(a) * spawnR;
       const fl = Math.hypot(ARENA_CENTER.x - f.pos.x, ARENA_CENTER.y - f.pos.y) || 1;
@@ -559,6 +561,7 @@ export class MultiplayerScene extends Phaser.Scene {
         break;
       }
       case 'end': {
+        this.endReason = e.reason === 'forfeit' ? 'forfeit' : 'normal';
         this.playEndFx(e.winnerId);
         break;
       }
@@ -666,13 +669,24 @@ export class MultiplayerScene extends Phaser.Scene {
     const isDraw = winnerId === null;
     const iWon = winnerId === mpSession.myPid;
 
+    const forfeit = this.endReason === 'forfeit';
     const text = this.hud.bigText;
     text
       .setVisible(true)
       .setAlpha(0)
       .setScale(0.6)
-      .setText(isDraw ? 'DRAW!' : iWon ? 'YOU WIN!' : `${(winnerRow?.name ?? '').toUpperCase()} WINS!`)
-      .setColor(isDraw ? PALETTE.text : (winnerRow?.css ?? PALETTE.text));
+      .setText(
+        forfeit
+          ? iWon
+            ? 'OPPONENT LEFT'
+            : 'YOU LEFT'
+          : isDraw
+            ? 'DRAW!'
+            : iWon
+              ? 'YOU WIN!'
+              : `${(winnerRow?.name ?? '').toUpperCase()} WINS!`,
+      )
+      .setColor(isDraw && !forfeit ? PALETTE.text : (winnerRow?.css ?? PALETTE.text));
     this.tweens.add({
       targets: text,
       alpha: { from: 0, to: 1 },
@@ -703,6 +717,7 @@ export class MultiplayerScene extends Phaser.Scene {
         playerKos: me?.kos ?? 0,
         playerOut: this.playerOut,
         outBy: this.lastFallBy?.name ?? null,
+        reason: this.endReason,
       });
     });
   }
