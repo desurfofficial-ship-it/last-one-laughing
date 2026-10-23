@@ -13,7 +13,10 @@ services:
     name: last-one-laughing
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build -w client
+    # --include=dev is required: NODE_ENV=production would otherwise skip
+    # devDependencies, and the client build needs vite/typescript while the
+    # server start script needs tsx (see server/package.json).
+    buildCommand: npm ci --include=dev && npm run build -w client
     startCommand: npm run start -w server
     healthCheckPath: /health
     autoDeploy: true
